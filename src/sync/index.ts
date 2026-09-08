@@ -82,7 +82,9 @@ export async function drain(): Promise<void> {
         // user_id is stamped here rather than in the UI, so nothing upstream has to
         // know about auth. RLS would reject a mismatch anyway.
         const row = { ...item.row, user_id: userId };
-        const { error } = await supabase.from(item.table).upsert(row, { onConflict: "id" });
+        // profile is keyed on user_id (one row per person); everything else on id.
+        const onConflict = item.table === "profile" ? "user_id" : "id";
+        const { error } = await supabase.from(item.table).upsert(row, { onConflict });
         if (error) throw new Error(error.message);
         if (item.seq != null) await outboxDrop(item.seq);
       } catch (err) {
