@@ -52,7 +52,32 @@ export function db(): Promise<IDBPDatabase<Schema>> {
   return _db;
 }
 
-export const uuid = () => crypto.randomUUID();
+/**
+ * A v4 UUID.
+ *
+ * `crypto.randomUUID` exists only in a secure context — HTTPS or localhost. Served over
+ * plain HTTP (a phone opening the dev server across the LAN, say) it is `undefined`, and
+ * since every event id comes from here that would throw on every single write. Falling
+ * back keeps the app working instead of failing totally in a way that is hard to read.
+ */
+export function uuid(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 10
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+
+  // Last resort. Not cryptographically random, but ids only need to be unique, and a
+  // collision across one person's own writes is not a realistic concern.
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Events
