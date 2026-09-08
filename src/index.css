@@ -1,0 +1,49 @@
+/* Instrument Sans, self-hosted so the app renders correctly with no network. */
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/fonts/InstrumentSans-Variable.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0C0E12;
+  font-family: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  color: #E8ECF5;
+  /* iOS: no rubber-band overscroll behind the fixed tab bar. */
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: #8FB6E8; }
+a:hover { color: #fff; }
+
+input, button, select, textarea { font-family: inherit; }
+input::placeholder, textarea::placeholder { color: #6D778C; }
+input { color-scheme: dark; }
+
+input:focus, button:focus-visible, select:focus, textarea:focus {
+  outline: 2px solid #8FB6E8;
+  outline-offset: 2px;
+}
+
+/* Never show a focus ring for a plain tap on touch. */
+button:focus:not(:focus-visible) { outline: none; }
+
+@keyframes drip {
+  0%   { transform: translateY(0); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translateY(16px); opacity: 0; }
+}
+@keyframes slosh {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(1.5px); }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
