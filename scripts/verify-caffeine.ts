@@ -52,7 +52,20 @@ const mg = (n: number) => `${n.toFixed(2)} mg`;
 const hrs = (ms: number) => `${(ms / H_MS).toFixed(2)} h`;
 
 let failures = 0;
-function check(label: string, ok: boolean, detail: string) {
+let skipped = 0;
+
+/**
+ * STANDING RULE: an invariant guarded by "if the window is open" must print SKIPPED,
+ * never PASS, when no fixture reached that state — and something else must then cover
+ * it. A suite reporting green having checked nothing is worse than a failing one; this
+ * script shipped with three such invariants and they read as passes.
+ */
+function check(label: string, ok: boolean | "skip", detail: string) {
+  if (ok === "skip") {
+    skipped++;
+    say(`  [SKIP] ${pad(label, 34)} ${detail}`);
+    return;
+  }
   if (!ok) failures++;
   say(`  [${ok ? "PASS" : "FAIL"}] ${pad(label, 34)} ${detail}`);
 }
@@ -335,7 +348,7 @@ async function main() {
       Math.abs(independent - st.next.projectedBedtimeMg) < 1e-6,
       `difference ${Math.abs(independent - st.next.projectedBedtimeMg).toExponential(2)} mg`);
   } else {
-    check("2 ceiling honoured", true, `not applicable — next cup is ${st.next.reason}`);
+    check("2 ceiling honoured", "skip", `no open window (next cup is ${st.next.reason})`);
   }
 
   // 3 — floor
@@ -344,7 +357,7 @@ async function main() {
     check("3 floor honoured", atSlot <= settings.focusFloorMg + 1e-9,
       `${atSlot.toFixed(3)} mg <= ${settings.focusFloorMg} mg at ${clk(st.next.at)}`);
   } else {
-    check("3 floor honoured", true, `not applicable — next cup is ${st.next.reason}`);
+    check("3 floor honoured", "skip", `no open window (next cup is ${st.next.reason})`);
   }
 
   // 4 — gap
@@ -356,10 +369,10 @@ async function main() {
       check("4 gap honoured", gap >= settings.minGapHours - 1e-9,
         `${gap.toFixed(2)} h >= ${settings.minGapHours} h since ${clk(last)}`);
     } else {
-      check("4 gap honoured", true, "no earlier drink in the logical day");
+      check("4 gap honoured", "skip", "no earlier drink in the logical day");
     }
   } else {
-    check("4 gap honoured", true, `not applicable — next cup is ${st.next.reason}`);
+    check("4 gap honoured", "skip", `no open window (next cup is ${st.next.reason})`);
   }
 
   // If the subject never yields an open window, 2/3/4 above pass vacuously. Re-run them
@@ -411,8 +424,8 @@ async function main() {
     const d0 = deadline(b0);
     const d1 = deadline(b1);
     if (d0 === null || d1 === null) {
-      check("6 amplification", true,
-        `not applicable — no headroom at ${d0 === null ? "B" : "B+2h"}`);
+      check("6 amplification", "skip",
+        `no headroom at ${d0 === null ? "B" : "B+2h"}`);
     } else {
       const shift = (d1 - d0) / H_MS;
       check("6 amplification", shift > 2,
@@ -487,9 +500,14 @@ async function main() {
   // -------------------------------------------------------------------------
   say("");
   rule("=");
-  say(failures === 0
-    ? "ALL PART 2 INVARIANTS PASSED"
-    : `${failures} PART 2 INVARIANT(S) FAILED`);
+  if (failures > 0) {
+    say(`${failures} PART 2 INVARIANT(S) FAILED` + (skipped ? `, ${skipped} skipped` : ""));
+  } else if (skipped > 0) {
+    say(`ALL RUN INVARIANTS PASSED — ${skipped} SKIPPED (see the re-check block above)`);
+    say("A skip is not a pass. Each one must be covered by a re-check that did run.");
+  } else {
+    say("ALL PART 2 INVARIANTS PASSED, none skipped");
+  }
   rule("=");
   say("");
 
