@@ -6,6 +6,7 @@ import { today, toBS } from "@/lib/date";
 import { C, TABS, type TabKey, num } from "@/ui/tokens";
 import { Today } from "@/screens/Today";
 import { Fuel } from "@/screens/Fuel";
+import { Train } from "@/screens/Train";
 import { QuickLog } from "@/screens/QuickLog";
 import { Login } from "@/screens/Login";
 import { Settings } from "@/screens/Settings";
@@ -94,6 +95,8 @@ export default function App() {
           <Today onOpen={() => {}} />
         ) : tab === "fuel" ? (
           <Fuel />
+        ) : tab === "train" ? (
+          <Train />
         ) : (
           <Placeholder tab={tab} />
         )}
