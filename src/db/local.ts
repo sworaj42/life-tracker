@@ -245,6 +245,79 @@ export async function getCategories(kind: "expense" | "income"): Promise<Categor
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Every category row including tombstones — the picker needs to know what was hidden. */
+export async function getCategoriesRaw(kind: "expense" | "income"): Promise<Category[]> {
+  const d = await db();
+  return (await d.getAllFromIndex("categories", "by_kind", kind))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Rename a category, and relabel every transaction that used it.
+ *
+ * Unlike a food's macros — which are copied at write time because a meal eaten in March
+ * did not change when the estimate did — a category is purely a grouping label. Renaming
+ * it means "this grouping is now called X". Leaving history on the old name would split
+ * one grouping into two in every total, which is worse than rewriting a label.
+ */
+export async function renameCategory(
+  kind: "expense" | "income", from: string, to: string,
+): Promise<void> {
+  const name = to.trim();
+  if (!name || name.toLowerCase() === from.trim().toLowerCase()) return;
+
+  const d = await db();
+  const rows = await d.getAllFromIndex("categories", "by_kind", kind);
+  const mine = rows.find((c) => c.name.toLowerCase() === from.trim().toLowerCase());
+  if (mine) {
+    const next: Category = { ...mine, name, updated_at: new Date().toISOString() };
+    await d.put("categories", next);
+    await enqueue({ table: "categories", op: "upsert", row: next as unknown as Record<string, unknown> });
+  } else {
+    await addCategory(kind, name);
+  }
+
+  const events = await d.getAllFromIndex("events", "by_kind", kind);
+  for (const e of events) {
+    const p = e.payload as { cat?: string; label?: string };
+    if ((p.cat ?? "").trim().toLowerCase() !== from.trim().toLowerCase()) continue;
+    await patchEvent(e.id, (x) => ({
+      ...x,
+      cat: name,
+      // A transaction labelled only by its category follows the rename too.
+      label: (x.label as string) === p.cat ? name : x.label,
+    }));
+  }
+}
+
+/**
+ * Hide a category from the picker.
+ *
+ * Transactions keep their label — deleting a name must not rewrite money records, and a
+ * past total stays whatever it was. A default with no row yet is materialised first, so
+ * that hiding it survives a reload.
+ */
+export async function hideCategory(kind: "expense" | "income", name: string): Promise<void> {
+  const existing = await addCategory(kind, name);
+  const d = await db();
+  const next: Category = {
+    ...existing, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  };
+  await d.put("categories", next);
+  await enqueue({ table: "categories", op: "upsert", row: next as unknown as Record<string, unknown> });
+}
+
+/** How many transactions currently use a category — shown before hiding one. */
+export async function countByCategory(
+  kind: "expense" | "income", name: string,
+): Promise<number> {
+  const d = await db();
+  const events = await d.getAllFromIndex("events", "by_kind", kind);
+  const key = name.trim().toLowerCase();
+  return events.filter((e) => !e.deleted_at
+    && ((e.payload as { cat?: string }).cat ?? "").trim().toLowerCase() === key).length;
+}
+
 /** Case-insensitive: "Food" and "food" must not both exist. */
 export async function addCategory(kind: "expense" | "income", name: string): Promise<Category> {
   const trimmed = name.trim();

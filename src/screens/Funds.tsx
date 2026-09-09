@@ -12,10 +12,11 @@
  *   - A receipt chip renders only when a receipt actually exists.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   eventsOfKind, getProfile, saveProfile, logEvent, removeEvent, patchEvent,
-  getCategories, addCategory,
+  getCategories, getCategoriesRaw, addCategory, renameCategory, hideCategory,
+  countByCategory,
 } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type AnyEvent, type Category, type Profile } from "@/db/types";
@@ -251,29 +252,42 @@ function WeeklyBudget({ profile, b }: { profile: Profile; b: ReturnType<typeof b
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The category chips.
+ *
+ * Long-press a chip to rename or hide it. Categories are the one thing you can create in
+ * a hurry and then never correct — a typo becomes permanent and quietly splits every
+ * total in two.
+ */
 function CategoryPicker({
   kind, value, onPick, label = "Category",
 }: {
   kind: "expense" | "income"; value: string; onPick: (c: string) => void; label?: string;
 }) {
   const saved = useLive<Category[]>(() => getCategories(kind), [kind], []);
+  const all = useLive<Category[]>(() => getCategoriesRaw(kind), [kind], []);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
+  const [menu, setMenu] = useState<string | null>(null);
+  const [rename, setRename] = useState<string | null>(null);
+  const [uses, setUses] = useState<number | null>(null);
+
   const defaults = kind === "expense" ? DEFAULT_EXPENSE_CATS : DEFAULT_INCOME_CATS;
-  // Union, not one-or-the-other. Saving a single expense writes its category, which
-  // would otherwise make `saved` non-empty and hide every default from then on — the
-  // list collapsed to whatever you happened to use first.
+  // Hidden ones stay out, including defaults that were hidden — otherwise a default
+  // would reappear on every reload no matter how often it was dismissed.
+  const hidden = new Set(
+    all.filter((c) => c.deleted_at).map((c) => c.name.trim().toLowerCase()),
+  );
   const seen = new Set<string>();
   const names = [...defaults, ...saved.map((c) => c.name)].filter((n) => {
     const k = n.trim().toLowerCase();
-    if (seen.has(k)) return false;
+    if (seen.has(k) || hidden.has(k)) return false;
     seen.add(k);
     return true;
   });
 
   const add = async () => {
     if (!adding.trim()) { setEditing(false); return; }
-    // Case-insensitive, so "Food" and "food" cannot both exist (AUDIT C15).
     const c = await addCategory(kind, adding);
     onPick(c.name);
     setAdding("");
@@ -281,26 +295,37 @@ function CategoryPicker({
     bump();
   };
 
+  const openMenu = async (name: string) => {
+    setMenu(name);
+    setRename(null);
+    setUses(await countByCategory(kind, name));
+  };
+
+  const doRename = async () => {
+    if (menu == null || rename == null) return;
+    await renameCategory(kind, menu, rename);
+    if (value === menu) onPick(rename.trim());
+    setMenu(null);
+    setRename(null);
+    bump();
+  };
+
+  const doHide = async () => {
+    if (menu == null) return;
+    await hideCategory(kind, menu);
+    if (value === menu) onPick("");
+    setMenu(null);
+    bump();
+  };
+
   return (
     <>
       <div style={{ fontSize: 12, color: C.soft, margin: "10px 0 7px" }}>{label}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {names.map((n) => {
-          const on = value === n;
-          return (
-            <button key={n} onClick={() => onPick(n)} style={{
-              border: `1px solid ${on ? ACCENT : "rgba(255,255,255,.1)"}`,
-              borderRadius: 10,
-              background: on ? ACCENT : "rgba(255,255,255,.05)",
-              color: on ? ON_ACCENT : C.ink,
-              fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
-            }}>
-              {n}
-            </button>
-          );
-        })}
-        {/* A dashed chip, not a permanently open field — it is an escape hatch, and
-            leaving an input on screen makes it look like a required step. */}
+        {names.map((n) => (
+          <Chip key={n} name={n} selected={value === n}
+            onPick={() => onPick(n)} onHold={() => void openMenu(n)} />
+        ))}
         {editing ? (
           <input
             value={adding} autoFocus
@@ -326,7 +351,111 @@ function CategoryPicker({
           </button>
         )}
       </div>
+
+      <div style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>
+        Hold a category to rename or hide it.
+      </div>
+
+      {menu && (
+        <div style={{
+          marginTop: 10, padding: "12px 14px", borderRadius: 12,
+          background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{menu}</div>
+          <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 10, ...num }}>
+            {uses == null ? "…" : uses === 0
+              ? "Not used by anything yet."
+              : `Used by ${uses} transaction${uses === 1 ? "" : "s"}.`}
+          </div>
+
+          <input
+            value={rename ?? menu}
+            onChange={(e) => setRename(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void doRename()}
+            aria-label="Rename category"
+            style={INPUT} />
+          <div style={{ fontSize: 11, color: C.faint, margin: "6px 0 10px", lineHeight: 1.5 }}>
+            Renaming relabels every transaction that used it, so the grouping stays whole
+            rather than splitting across two names.
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
+            <button onClick={() => void doRename()} disabled={!rename?.trim()} style={{
+              height: 38, borderRadius: 10, border: "none",
+              background: rename?.trim() ? ACCENT : "rgba(111,194,154,.25)",
+              color: ON_ACCENT, fontSize: 13, fontWeight: 600,
+              cursor: rename?.trim() ? "pointer" : "not-allowed",
+            }}>
+              Rename
+            </button>
+            <button onClick={() => void doHide()} style={{
+              height: 38, borderRadius: 10, border: "1px solid rgba(210,104,94,.4)",
+              background: "rgba(210,104,94,.1)", color: "#D2685E", fontSize: 13,
+              cursor: "pointer",
+            }}>
+              Hide
+            </button>
+            <button onClick={() => { setMenu(null); setRename(null); }} aria-label="Close"
+              style={{
+                width: 38, height: 38, borderRadius: 10,
+                border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+                color: C.soft, fontSize: 15, cursor: "pointer",
+              }}>
+              ×
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 1.5 }}>
+            Hiding removes it from this list only. Transactions keep their label — deleting
+            a name must not rewrite what you already spent.
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+/**
+ * A chip that reports a long press.
+ *
+ * 450ms, cancelled by moving or lifting early. The click is suppressed afterwards so
+ * holding a chip does not also select it.
+ */
+function Chip({
+  name, selected, onPick, onHold,
+}: { name: string; selected: boolean; onPick: () => void; onHold: () => void }) {
+  const timer = useRef<number | null>(null);
+  const held = useRef(false);
+
+  const startHold = () => {
+    held.current = false;
+    timer.current = window.setTimeout(() => {
+      held.current = true;
+      onHold();
+    }, 450);
+  };
+  const cancel = () => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+
+  return (
+    <button
+      onPointerDown={startHold}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => { if (!held.current) onPick(); }}
+      style={{
+        border: `1px solid ${selected ? ACCENT : "rgba(255,255,255,.1)"}`,
+        borderRadius: 10,
+        background: selected ? ACCENT : "rgba(255,255,255,.05)",
+        color: selected ? ON_ACCENT : C.ink,
+        fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
+        WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none",
+      }}>
+      {name}
+    </button>
   );
 }
 
