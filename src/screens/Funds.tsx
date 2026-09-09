@@ -352,20 +352,23 @@ function CategoryPicker({
         )}
       </div>
 
-      <div style={{ fontSize: 11, color: C.faint, marginTop: 6 }}>
-        Hold a category to rename or hide it.
-      </div>
 
       {menu && (
         <div style={{
           marginTop: 10, padding: "12px 14px", borderRadius: 12,
           background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)",
         }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{menu}</div>
-          <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 10, ...num }}>
-            {uses == null ? "…" : uses === 0
-              ? "Not used by anything yet."
-              : `Used by ${uses} transaction${uses === 1 ? "" : "s"}.`}
+          <div style={{
+            display: "flex", alignItems: "baseline", justifyContent: "space-between",
+            gap: 8, marginBottom: 8,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{menu}</span>
+            {/* Only when it is actually in use — that is a warning, not a description. */}
+            {uses != null && uses > 0 && (
+              <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
+                {uses} transaction{uses === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
 
           <input
@@ -373,11 +376,7 @@ function CategoryPicker({
             onChange={(e) => setRename(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void doRename()}
             aria-label="Rename category"
-            style={INPUT} />
-          <div style={{ fontSize: 11, color: C.faint, margin: "6px 0 10px", lineHeight: 1.5 }}>
-            Renaming relabels every transaction that used it, so the grouping stays whole
-            rather than splitting across two names.
-          </div>
+            style={{ ...INPUT, marginBottom: 10 }} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
             <button onClick={() => void doRename()} disabled={!rename?.trim()} style={{
@@ -403,10 +402,6 @@ function CategoryPicker({
               }}>
               ×
             </button>
-          </div>
-          <div style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 1.5 }}>
-            Hiding removes it from this list only. Transactions keep their label — deleting
-            a name must not rewrite what you already spent.
           </div>
         </div>
       )}
