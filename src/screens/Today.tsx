@@ -7,14 +7,15 @@
 
 import { useState } from "react";
 import {
-  eventsOfKindOnDate, eventsOfKind, getProfile, logEvent, removeEvent,
-  replaceOnDate,
+  eventsOfKindOnDate, eventsOfKind, eventsOfKindSince, getProfile, logEvent,
+  removeEvent, replaceOnDate,
 } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, ASLEEP, type AnyEvent, type Profile, type SleepValue } from "@/db/types";
 import { today, localTime, nowMin, dur } from "@/lib/date";
 import { waterDay } from "@/lib/calc/water";
 import { coffeeDay } from "@/lib/calc/coffee";
+import { LOOKBACK_HOURS, drinksFromEvents } from "@/lib/calc/caffeine";
 import { weightStats } from "@/lib/calc/weight";
 import { C, STAGE, num, ghostButton, input as inputStyle } from "@/ui/tokens";
 import { Card, CardHeader, StatTile, Meter, Empty } from "@/ui/components";
@@ -27,6 +28,13 @@ export function Today({ onOpen }: { onOpen: (page: string) => void }) {
   const profile = useLive<Profile>(() => getProfile(), [], DEFAULT_PROFILE);
   const weights = useLive<AnyEvent[]>(() => eventsOfKind("weight"), [], []);
   const water = useLive<AnyEvent[]>(() => eventsOfKindOnDate("water", d), [d], []);
+  // Caffeine is read over a rolling 36h window, not a calendar date: at 00:30 a
+  // date lookup sees a 00:30 cup but not a 23:30 cup from an hour earlier.
+  const coffeeWindow = useLive<AnyEvent[]>(
+    () => eventsOfKindSince("coffee", Date.now() - LOOKBACK_HOURS * 3_600_000),
+    [d], [],
+  );
+  // Legacy today-only fetch, still feeding the old card. Removed when the card is wired.
   const coffee = useLive<AnyEvent[]>(() => eventsOfKindOnDate("coffee", d), [d], []);
   const sleep = useLive<AnyEvent[]>(() => eventsOfKindOnDate("sleep", d), [d], []);
   const lifts = useLive<AnyEvent[]>(() => eventsOfKindOnDate("lift", d), [d], []);
@@ -35,6 +43,9 @@ export function Today({ onOpen }: { onOpen: (page: string) => void }) {
   const trained = lifts.length > 0;
   const w = waterDay(water, profile, stats.latest, trained);
   const cof = coffeeDay(coffee, profile, nowMin());
+  // Built from occurred_at, ready for the card rewire.
+  const drinks = drinksFromEvents(coffeeWindow, Date.now());
+  void drinks;
 
   return (
     <>

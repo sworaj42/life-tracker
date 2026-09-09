@@ -172,6 +172,30 @@ export async function eventsOfKindOnDate(kind: Kind, date = today()): Promise<An
   return all.filter((e) => !e.deleted_at).sort(byDate);
 }
 
+/**
+ * Events of a kind whose `occurred_at` falls within a rolling window ending at `nowMs`.
+ *
+ * A per-date lookup is wrong for anything that decays: at 00:30 it sees a 00:30 cup but
+ * not a 23:30 cup from an hour earlier. The `[kind, local_date]` index still does the
+ * narrowing — the window spans at most three local dates — and `occurred_at` then makes
+ * the boundary exact and rolling rather than a calendar edge.
+ */
+export async function eventsOfKindSince(
+  kind: Kind,
+  sinceMs: number,
+  nowMs: number = Date.now(),
+): Promise<AnyEvent[]> {
+  const d = await db();
+  const range = IDBKeyRange.bound(
+    [kind, localDate(new Date(sinceMs))],
+    [kind, localDate(new Date(nowMs))],
+  );
+  const all = await d.getAllFromIndex("events", "by_kind_date", range as never);
+  return all
+    .filter((e) => !e.deleted_at && Date.parse(e.occurred_at) >= sinceMs)
+    .sort(byDate);
+}
+
 export async function allEvents(): Promise<AnyEvent[]> {
   const d = await db();
   return (await d.getAll("events")).filter((e) => !e.deleted_at).sort(byDate);

@@ -187,13 +187,82 @@ export function nowReadout(
   now: number,
   s: CaffeineSettings = CAFFEINE_DEFAULTS,
 ): Readout {
-  const past = drinks.filter((d) => d.time <= now);
-  if (past.length) {
-    const latest = Math.max(...past.map((d) => d.time));
-    if (now - latest < s.settlingMinutes * 60_000) return { kind: "settling" };
-  }
   // Never show decimals: the precision is not there to justify them.
-  return { kind: "estimate", mg: Math.round(totalRemaining(drinks, now, s)) };
+  const estimate: Readout = { kind: "estimate", mg: Math.round(totalRemaining(drinks, now, s)) };
+
+  const past = drinks.filter((d) => d.time <= now);
+  if (!past.length) return estimate;
+
+  const lastDrinkTime = Math.max(...past.map((d) => d.time));
+  if (now - lastDrinkTime >= s.settlingMinutes * 60_000) return estimate;
+
+  // Recency alone is not enough to justify hiding the number. Suppress only when the
+  // figure would be almost entirely the one unmodelled drink; if there is real residual
+  // aboard from earlier, the total is nearly true and hiding it costs more than showing
+  // it — that is also the state where the number is most worth seeing.
+  let dropped = false;
+  const earlier = drinks.filter((d) => {
+    if (!dropped && d.time === lastDrinkTime) {
+      dropped = true;
+      return false;
+    }
+    return true;
+  });
+  const residual = totalRemaining(earlier, now, s);
+  return residual < s.focusFloorMg ? { kind: "settling" } : estimate;
+}
+
+// ---------------------------------------------------------------------------
+// Source window
+// ---------------------------------------------------------------------------
+
+/**
+ * How far back drinks must be read.
+ *
+ * Caffeine does not respect calendar boundaries, so a per-date lookup is wrong: at 00:30
+ * it sees a 00:30 cup but not a 23:30 cup from an hour earlier, which would understate
+ * the bedtime projection AND leave the gap guard blind enough to answer "next cup: now".
+ *
+ * 36h is where an 80mg dose falls under 1mg (80 × 0.5^7.2 = 0.54mg). A 24h window would
+ * leave 2.87mg unaccounted, which is 7% of the bedtime limit.
+ */
+export const LOOKBACK_HOURS = 36;
+
+/**
+ * Structurally typed so this module still imports nothing. `payload` is deliberately
+ * open: callers pass a union covering every event kind, and narrowing it here would
+ * reject that union rather than describe it.
+ */
+export interface DrinkEvent {
+  kind: string;
+  occurred_at: string;
+  payload: Readonly<Record<string, unknown>>;
+  deleted_at?: string | null;
+}
+
+/**
+ * Map stored events to doses, keeping only those inside the rolling window.
+ *
+ * `occurred_at` is the true UTC instant. The local `payload.at` clock string must never
+ * be used for elapsed-hour arithmetic — a DST transition silently corrupts it, and a
+ * midnight wrap turns an hour ago into 23 hours ago.
+ */
+export function drinksFromEvents(
+  events: DrinkEvent[],
+  now: number,
+  lookbackHours: number = LOOKBACK_HOURS,
+): Drink[] {
+  const since = now - lookbackHours * H_MS;
+  const out: Drink[] = [];
+  for (const e of events) {
+    if (e.kind !== "coffee" || e.deleted_at) continue;
+    const time = Date.parse(e.occurred_at);
+    const mg = e.payload?.["mg"];
+    if (!Number.isFinite(time) || typeof mg !== "number" || !(mg > 0)) continue;
+    if (time < since) continue;
+    out.push({ time, mg });
+  }
+  return out.sort((a, b) => a.time - b.time);
 }
 
 // ---------------------------------------------------------------------------

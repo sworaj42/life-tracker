@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   CAFFEINE_DEFAULTS as S, caffeineRemaining, totalRemaining, findNextCup,
   latestViableTime, drinksInLogicalDay, resolveBedtime, bedtimeTier, nowReadout,
+  drinksFromEvents,
   type Drink,
 } from "./caffeine";
 import { atLocalTimeMs, localMinutes, localTime } from "@/lib/date";
@@ -183,7 +184,8 @@ describe("resolveBedtime — the day-boundary bug", () => {
     expect((now - b.at) / 3_600_000).toBeCloseTo(1.5, 2);
   });
 
-  it("at 23:30 also reports past due rather than pointing at tomorrow", () => {
+  // The case the original spec got wrong: its rule pointed 23.5h ahead at tomorrow.
+  it("at 23:30 reports past due, not 23.5h ahead at tomorrow", () => {
     // Generalises the spec: same bug class as 00:30, one rule instead of a carve-out.
     const b = resolveBedtime(at("23:30"), 23, deps);
     expect(b.kind).toBe("past_due");
@@ -211,22 +213,94 @@ describe("bedtimeTier — derived from the limit, never hardcoded", () => {
   });
 });
 
-describe("nowReadout — suppressed while the model is wrong", () => {
-  it("says settling for the first 50 minutes", () => {
+describe("nowReadout — suppressed only while the model is mostly wrong", () => {
+  it("says settling for the first 50 minutes of a lone cup", () => {
     const d: Drink[] = [{ mg: 80, time: at("14:00") }];
     expect(nowReadout(d, at("14:00")).kind).toBe("settling");
     expect(nowReadout(d, at("14:49")).kind).toBe("settling");
   });
 
   it("gives a whole-number estimate after that", () => {
-    const d: Drink[] = [{ mg: 80, time: at("14:00") }];
-    const r = nowReadout(d, at("14:50"));
+    const r = nowReadout([{ mg: 80, time: at("14:00") }], at("14:50"));
     expect(r.kind).toBe("estimate");
     if (r.kind === "estimate") expect(Number.isInteger(r.mg)).toBe(true);
   });
 
+  // Recency alone would hide 150mg at 00:30 when the true figure is ~90mg. Nearly true,
+  // and the state where the number is most worth seeing.
+  it("SHOWS the number when real residual is aboard, even within 50 min", () => {
+    const d: Drink[] = [
+      { mg: 80, time: at("23:30", "2026-09-09") },
+      { mg: 80, time: at("00:30", "2026-09-10") },
+    ];
+    const now = at("00:30", "2026-09-10");
+    expect(totalRemaining([d[0]], now)).toBeCloseTo(69.64, 2); // residual >= floor
+    const r = nowReadout(d, now);
+    expect(r.kind).toBe("estimate");
+    if (r.kind === "estimate") expect(r.mg).toBe(150);
+  });
+
+  it("still suppresses when the residual is below the floor", () => {
+    const d: Drink[] = [
+      { mg: 80, time: at("06:00") }, // decayed to ~10mg by 21:00
+      { mg: 80, time: at("21:00") },
+    ];
+    const now = at("21:10");
+    expect(totalRemaining([d[0]], now)).toBeLessThan(S.focusFloorMg);
+    expect(nowReadout(d, now).kind).toBe("settling");
+  });
+
   it("is an estimate of 0 with no drinks", () => {
     expect(nowReadout([], at("14:00"))).toEqual({ kind: "estimate", mg: 0 });
+  });
+});
+
+describe("drinksFromEvents — the rolling 36h window", () => {
+  const now = at("14:00");
+  const ev = (hoursAgo: number, mg = 80) => ({
+    kind: "coffee",
+    occurred_at: new Date(now - hoursAgo * 3_600_000).toISOString(),
+    payload: { mg },
+  });
+
+  // Proves the boundary is a rolling window from `now`, not a date range that happened
+  // to resolve correctly. This is the specific way the caller change regresses.
+  it("includes a drink 35h back", () => {
+    const drinks = drinksFromEvents([ev(35)], now);
+    expect(drinks).toHaveLength(1);
+    // 35h is exactly 7 half-lives: 80 / 2^7 = 0.625mg.
+    expect(totalRemaining(drinks, now)).toBeCloseTo(0.625, 3);
+  });
+
+  it("excludes a drink 37h back", () => {
+    expect(drinksFromEvents([ev(37)], now)).toHaveLength(0);
+  });
+
+  it("keeps the boundary rolling as `now` advances", () => {
+    const e = ev(35);
+    expect(drinksFromEvents([e], now)).toHaveLength(1);
+    expect(drinksFromEvents([e], now + 2 * 3_600_000)).toHaveLength(0);
+  });
+
+  it("reads occurred_at, not a local clock string", () => {
+    const drinks = drinksFromEvents([ev(2)], now);
+    expect(drinks[0].time).toBe(now - 2 * 3_600_000);
+  });
+
+  it("skips other kinds, tombstones and malformed rows", () => {
+    const rows = [
+      { ...ev(1), kind: "water" },
+      { ...ev(1), deleted_at: new Date().toISOString() },
+      { kind: "coffee", occurred_at: "not-a-date", payload: { mg: 80 } },
+      { kind: "coffee", occurred_at: new Date(now).toISOString(), payload: {} },
+      ev(1),
+    ];
+    expect(drinksFromEvents(rows, now)).toHaveLength(1);
+  });
+
+  it("returns them oldest first", () => {
+    const drinks = drinksFromEvents([ev(1), ev(10), ev(5)], now);
+    expect(drinks.map((d) => (now - d.time) / 3_600_000)).toEqual([10, 5, 1]);
   });
 });
 
