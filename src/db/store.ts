@@ -67,3 +67,19 @@ export function writing<A extends unknown[], R>(
 }
 
 export const currentVersion = () => version;
+
+/**
+ * A clock that ticks, so anything derived from `now` stays true without a write.
+ *
+ * Without this, `now` is frozen between local writes: the caffeine card would show a
+ * "next cup" time computed when the screen mounted and never move. Re-renders only —
+ * `useLive` queries do not re-run, since their deps are unchanged.
+ */
+export function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}

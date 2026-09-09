@@ -191,6 +191,26 @@ describe("resolveBedtime — the day-boundary bug", () => {
     expect(b.kind).toBe("past_due");
   });
 
+  // A bedtime after midnight belongs to the END of the logical day, not its start.
+  it("a 01:00 bedtime is 17h ahead at 08:00, not past due", () => {
+    const now = at("08:00");
+    const b = resolveBedtime(now, 1, deps);
+    expect(b.kind).toBe("upcoming");
+    expect((b.at - now) / 3_600_000).toBeCloseTo(17, 2);
+  });
+
+  it("a 01:00 bedtime is 30 min ahead at 00:30", () => {
+    const now = at("00:30", "2026-09-10");
+    const b = resolveBedtime(now, 1, deps);
+    expect(b.kind).toBe("upcoming");
+    expect((b.at - now) / 3_600_000).toBeCloseTo(0.5, 2);
+  });
+
+  it("honours bedtime minutes, not just the hour", () => {
+    const b = resolveBedtime(at("13:22"), { hour: 23, minute: 30 }, deps);
+    expect(clk(b.at)).toBe("23:30");
+  });
+
   it("at 05:00 the bedtime is tonight's", () => {
     const b = resolveBedtime(at("05:00", "2026-09-10"), 23, deps);
     expect(b.kind).toBe("upcoming");
@@ -296,6 +316,26 @@ describe("drinksFromEvents — the rolling 36h window", () => {
       ev(1),
     ];
     expect(drinksFromEvents(rows, now)).toHaveLength(1);
+  });
+
+  it("never produces NaN from a missing or string mg", () => {
+    const rows = [
+      { kind: "coffee", occurred_at: new Date(now).toISOString(), payload: { mg: undefined } },
+      { kind: "coffee", occurred_at: new Date(now).toISOString(), payload: { mg: "80" } },
+    ];
+    const drinks = drinksFromEvents(rows, now);
+    expect(drinks.every((d) => Number.isFinite(d.mg))).toBe(true);
+    expect(Number.isNaN(totalRemaining(drinks, now))).toBe(false);
+  });
+
+  it('coerces a numeric string mg rather than dropping it', () => {
+    const rows = [{ kind: "coffee", occurred_at: new Date(now).toISOString(), payload: { mg: "80" } }];
+    expect(drinksFromEvents(rows, now)).toEqual([{ time: now, mg: 80 }]);
+  });
+
+  it("drops an undefined mg entirely", () => {
+    const rows = [{ kind: "coffee", occurred_at: new Date(now).toISOString(), payload: { mg: undefined } }];
+    expect(drinksFromEvents(rows, now)).toHaveLength(0);
   });
 
   it("returns them oldest first", () => {

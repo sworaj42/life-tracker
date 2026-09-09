@@ -140,16 +140,25 @@ export type Bedtime =
  * start, but anchoring on the logical day means 23:30 with a 23:00 bedtime also reports
  * past_due rather than pointing 23.5 hours ahead at tomorrow. Same bug, same fix, one
  * rule instead of a special case.
+ *
+ * A bedtime EARLIER than the day start (01:00, say) belongs to the far end of the
+ * logical day — the small hours of the next calendar date — not to its beginning.
+ * Without that, a 01:00 bedtime resolves to 01:00 this morning and reports past_due
+ * when it is really seventeen hours away.
  */
 export function resolveBedtime(
   now: number,
-  bedtimeHour: number,
+  bedtime: number | { hour: number; minute?: number },
   deps: ClockDeps,
   s: CaffeineSettings = CAFFEINE_DEFAULTS,
 ): Bedtime {
+  const hour = typeof bedtime === "number" ? bedtime : bedtime.hour;
+  const minute = typeof bedtime === "number" ? 0 : bedtime.minute ?? 0;
   const beforeDayStart = deps.localMinutes(now) < s.dayStartHour * 60;
   const anchor = beforeDayStart ? now - 24 * H_MS : now;
-  const at = deps.atLocalTimeMs(anchor, bedtimeHour);
+  // A bedtime before the day start lands on the next calendar date.
+  const dayOfBedtime = hour < s.dayStartHour ? anchor + 24 * H_MS : anchor;
+  const at = deps.atLocalTimeMs(dayOfBedtime, hour, minute);
   return at <= now ? { kind: "past_due", at } : { kind: "upcoming", at };
 }
 
@@ -257,8 +266,11 @@ export function drinksFromEvents(
   for (const e of events) {
     if (e.kind !== "coffee" || e.deleted_at) continue;
     const time = Date.parse(e.occurred_at);
-    const mg = e.payload?.["mg"];
-    if (!Number.isFinite(time) || typeof mg !== "number" || !(mg > 0)) continue;
+    // mg comes out of an untyped bag, so coerce and check. A missing or string mg
+    // would otherwise become NaN and propagate in silence: every comparison in
+    // totalRemaining goes false, findNextCup answers too_late, and nothing errors.
+    const mg = Number(e.payload?.["mg"]);
+    if (!Number.isFinite(time) || !Number.isFinite(mg) || mg <= 0) continue;
     if (time < since) continue;
     out.push({ time, mg });
   }
