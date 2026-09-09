@@ -7,6 +7,7 @@ import { C, TABS, type TabKey, num } from "@/ui/tokens";
 import { Today } from "@/screens/Today";
 import { Fuel } from "@/screens/Fuel";
 import { Train } from "@/screens/Train";
+import { Funds } from "@/screens/Funds";
 import { QuickLog } from "@/screens/QuickLog";
 import { Login } from "@/screens/Login";
 import { Settings } from "@/screens/Settings";
@@ -97,6 +98,8 @@ export default function App() {
           <Fuel />
         ) : tab === "train" ? (
           <Train />
+        ) : tab === "money" ? (
+          <Funds />
         ) : (
           <Placeholder tab={tab} />
         )}
