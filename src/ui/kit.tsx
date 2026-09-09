@@ -110,15 +110,28 @@ export function DayStrip({
             strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      <input type="date" value={date} max={t} aria-label="Pick a date"
-        onChange={(e) => e.target.value && onChange(e.target.value)}
-        style={{
-          border: "1px solid rgba(255,255,255,.1)", borderRadius: 9,
-          background: "rgba(255,255,255,.05)", padding: "6px 8px", fontSize: 12,
-          color: C.ink, outline: "none", colorScheme: "dark", width: 124,
-          WebkitAppearance: "none", appearance: "none", textAlign: "center",
-          minHeight: 32,
-        }} />
+      {/* iOS renders input[type=date] with no calendar affordance, so the icon is drawn
+          here. minHeight is load-bearing: with appearance:none the field can collapse. */}
+      <span style={{ position: "relative", display: "inline-block", width: 124 }}>
+        <input type="date" value={date} max={t} aria-label="Pick a date"
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+          style={{
+            border: "1px solid rgba(255,255,255,.1)", borderRadius: 9,
+            background: "rgba(255,255,255,.05)", padding: "6px 26px 6px 8px", fontSize: 12,
+            color: C.ink, outline: "none", colorScheme: "dark", width: "100%",
+            WebkitAppearance: "none", appearance: "none", textAlign: "left",
+            minHeight: 32, boxSizing: "border-box",
+          }} />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.faint}
+          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+          style={{
+            position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+            pointerEvents: "none",
+          }}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 10h18M8 3v4M16 3v4" />
+        </svg>
+      </span>
     </div>
   );
 }

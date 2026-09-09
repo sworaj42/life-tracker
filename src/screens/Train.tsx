@@ -11,7 +11,7 @@
  *   - the clock prefers the watch and labels a set-derived fallback as one.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { eventsOfKind, logEvent, removeEvent, replaceOnDate, patchEvent } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import type { AnyEvent } from "@/db/types";
@@ -21,11 +21,24 @@ import {
   type SetRow, type TrainDay,
 } from "@/lib/calc/train";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip } from "@/ui/kit";
+import { INPUT, DayStrip } from "@/ui/kit";
 
 const ACCENT = "#E0796F";
 const ON_ACCENT = "#1A0F0D";
 
+/** Both Train cards use the sub-card recipe, not the heavier tab card. */
+const CARD: React.CSSProperties = {
+  background: "rgba(255,255,255,.05)",
+  backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
+  border: "1px solid rgba(255,255,255,.08)",
+  borderRadius: 14,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
+  padding: "14px 16px",
+  marginBottom: 10,
+};
+
+/** The inner block: start-an-exercise, the live exercise, the clock. */
 const SUB: React.CSSProperties = {
   background: "rgba(255,255,255,.05)",
   border: "1px solid rgba(255,255,255,.07)",
@@ -337,15 +350,32 @@ const dayLabel = (iso: string) =>
 
 // ---------------------------------------------------------------------------
 
+/**
+ * A set chip. Tap the body to pull it back for editing; the × needs a second tap.
+ *
+ * One tap to delete is too easy to catch with a thumb mid-set, and the set is gone with
+ * no undo. The first tap arms and says so; the second removes. It disarms itself after
+ * a few seconds so a stray tap does not leave a live trigger sitting there.
+ */
 function SetChip({
   set, editing, onEdit, onRemove,
 }: { set: SetRow; editing: boolean; onEdit: () => void; onRemove: () => void }) {
+  const [armed, setArmed] = useState(false);
   const hue = rpeHue(set.rpe);
+
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(id);
+  }, [armed]);
+
   return (
     <span style={{
       display: "inline-flex", alignItems: "stretch",
-      border: `1px solid ${editing ? hue : "rgba(255,255,255,.12)"}`,
-      background: editing ? "rgba(255,255,255,.1)" : "rgba(255,255,255,.06)",
+      border: `1px solid ${armed ? "#D2685E" : editing ? hue : "rgba(255,255,255,.12)"}`,
+      background: armed
+        ? "rgba(210,104,94,.12)"
+        : editing ? "rgba(255,255,255,.1)" : "rgba(255,255,255,.06)",
       borderRadius: 9, minWidth: 96, overflow: "hidden",
     }}>
       <button onClick={onEdit} title="Edit this set" style={{
@@ -369,11 +399,17 @@ function SetChip({
           </span>
         </span>
       </button>
-      <button onClick={onRemove} aria-label="Remove set" style={{
-        border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-        fontSize: 14, padding: "0 7px", lineHeight: 1,
-      }}>
-        ×
+      <button
+        onClick={() => { if (armed) onRemove(); else setArmed(true); }}
+        aria-label={armed ? "Tap again to remove set" : "Remove set"}
+        title={armed ? "Tap again to remove" : "Remove set"}
+        style={{
+          border: "none", background: "transparent",
+          color: armed ? "#D2685E" : C.faint, cursor: "pointer",
+          fontSize: armed ? 11 : 14, fontWeight: armed ? 600 : 400,
+          padding: armed ? "0 8px" : "0 7px", lineHeight: 1, whiteSpace: "nowrap",
+        }}>
+        {armed ? "sure?" : "×"}
       </button>
     </span>
   );
@@ -387,40 +423,163 @@ function SessionCard({
   events: AnyEvent[]; day: TrainDay; date: string; setDate: (d: string) => void;
   clock: ReturnType<typeof sessionClock>;
 }) {
+  const [confirming, setConfirming] = useState(false);
+
+  // Watch-imported cardio, which has no sets and so gets its own card rather than
+  // being forced into the lift shape.
+  const cardio = events.filter(
+    (e) => e.kind === "session" && e.local_date === date
+      && !/strength|traditional/i.test((e.payload as { type?: string }).type ?? ""),
+  );
+
+  const deleteDay = async () => {
+    for (const e of events) {
+      if (e.local_date !== date) continue;
+      if (e.kind === "lift" || e.kind === "split" || e.kind === "dayEnd") {
+        await removeEvent(e.id);
+      }
+    }
+    setConfirming(false);
+    bump();
+  };
+
+  const title = day.split ? `${day.split} day` : clock.source === "none" ? "Session" : "Workout";
+
   return (
     <section style={CARD}>
-      <DayStrip date={date} onChange={setDate} />
+      <DayStrip date={date} onChange={(d) => { setConfirming(false); setDate(d); }} />
       <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "12px 0" }} />
 
-      {clock.source === "none" ? (
-        <div style={{ fontSize: 12, color: C.faint }}>
-          Nothing logged for this day.
-        </div>
+      {cardio.map((e) => {
+        const p = e.payload as { type: string; start: string; end: string; kcal?: number; km?: number };
+        const mins = Math.max(1, dur(p.start, p.end));
+        return (
+          <div key={e.id} style={{
+            ...SUB, marginBottom: 10, borderColor: "rgba(224,121,111,.22)",
+          }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              gap: 10, marginBottom: 7,
+            }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{p.type}</span>
+              <span style={{ fontSize: 11, color: C.faint }}>from watch</span>
+            </div>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              gap: 12, flexWrap: "wrap", ...num,
+            }}>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>{p.start}–{p.end}</span>
+              <span style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+                {p.km != null && (
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>
+                    {p.km}<span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> km</span>
+                  </span>
+                )}
+                <span style={{ fontSize: 15, fontWeight: 600 }}>
+                  {mins}<span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> min</span>
+                </span>
+                {p.kcal != null && (
+                  <span style={{ fontSize: 15, fontWeight: 600, color: ACCENT }}>
+                    {p.kcal}<span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> kcal</span>
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+
+      {clock.source === "none" && day.setCount === 0 ? (
+        <div style={{ fontSize: 12, color: C.faint }}>Nothing logged for this day.</div>
       ) : (
         <div style={{ ...SUB, padding: "12px 14px 14px" }}>
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             gap: 10, marginBottom: 12,
           }}>
-            <span style={{ fontSize: 15, fontWeight: 600, ...num }}>
-              {clock.source === "running"
-                ? `${clock.start} · running`
-                : `${clock.start}–${clock.end}`}
-            </span>
-            <span style={{ display: "flex", alignItems: "baseline", gap: 12, ...num }}>
-              <span style={{ fontSize: 12.5, color: C.faint }}>
-                {clock.mins} min{clock.kcal != null && ` · ${clock.kcal} kcal`}
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{title}</span>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+              <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
+                {day.exercises.length} exercise{day.exercises.length === 1 ? "" : "s"}
               </span>
-              {/* The fallback is always labelled: set-derived time misses warm-up and
-                  the final rest, so it is not the same measurement. */}
-              <span style={{
-                fontSize: 11,
-                color: clock.source === "watch" ? C.faint : C.food,
-              }}>
-                {clock.label}
-              </span>
+              {day.setCount > 0 && (
+                <button onClick={() => setConfirming(true)} style={{
+                  border: "none", background: "transparent", padding: "2px 0",
+                  cursor: "pointer", color: C.faint, fontSize: 12.5,
+                }}>
+                  Delete
+                </button>
+              )}
             </span>
           </div>
+
+          {/* Deleting a whole day is not undoable through the UI, so it asks first. */}
+          {confirming && (
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+              marginBottom: 12, padding: "10px 12px", borderRadius: 12,
+              background: "rgba(210,104,94,.1)", border: "1px solid rgba(210,104,94,.3)",
+            }}>
+              <span style={{ fontSize: 12.5, color: "#D2685E" }}>
+                Delete this whole session?
+              </span>
+              <span style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setConfirming(false)} style={{
+                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+                  borderRadius: 9, padding: "6px 11px", fontSize: 12.5, color: C.soft,
+                  cursor: "pointer",
+                }}>
+                  Keep
+                </button>
+                <button onClick={() => void deleteDay()} style={{
+                  border: "none", background: "#D2685E", borderRadius: 9, padding: "6px 11px",
+                  fontSize: 12.5, fontWeight: 600, color: ON_ACCENT, cursor: "pointer",
+                }}>
+                  Delete
+                </button>
+              </span>
+            </div>
+          )}
+
+          {clock.source !== "none" && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                gap: 12, flexWrap: "wrap",
+              }}>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{
+                    fontSize: 22, fontWeight: 600, lineHeight: 1,
+                    letterSpacing: "-0.01em", ...num,
+                  }}>
+                    {clock.source === "running"
+                      ? `${clock.start} · running`
+                      : `${clock.start}–${clock.end}`}
+                  </span>
+                  {/* Always labelled: a set-derived clock misses the warm-up and the
+                      final rest, so it is not the same measurement as the watch's. */}
+                  <span style={{
+                    fontSize: 11,
+                    color: clock.source === "watch" ? C.faint : C.food,
+                  }}>
+                    {clock.label}
+                  </span>
+                </span>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 14, ...num }}>
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>
+                    {clock.mins}
+                    <span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> min</span>
+                  </span>
+                  {clock.kcal != null && (
+                    <span style={{ fontSize: 15, fontWeight: 600, color: ACCENT }}>
+                      {clock.kcal}
+                      <span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> kcal</span>
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
 
           {day.setCount > 0 && (
             <div style={{
@@ -451,10 +610,10 @@ function SessionCard({
               </span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {x.sets.map((s) => (
-                <SetChip key={s.id} set={s} editing={false}
+              {x.sets.map((sx) => (
+                <SetChip key={sx.id} set={sx} editing={false}
                   onEdit={() => {}}
-                  onRemove={async () => { await removeEvent(s.id); bump(); }} />
+                  onRemove={async () => { await removeEvent(sx.id); bump(); }} />
               ))}
             </div>
             {prev && (
@@ -467,6 +626,16 @@ function SessionCard({
       })}
     </section>
   );
+}
+
+function dur(a: string, b: string): number {
+  const m = (t: string) => {
+    const [h, mm] = t.split(":").map(Number);
+    return h * 60 + (mm || 0);
+  };
+  let d = m(b) - m(a);
+  if (d < 0) d += 1440;
+  return d;
 }
 
 function Stat({
