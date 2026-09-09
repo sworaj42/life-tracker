@@ -26,7 +26,7 @@ import {
   DEFAULT_EXPENSE_CATS, DEFAULT_INCOME_CATS, rs, type Txn,
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip } from "@/ui/kit";
+import { CARD, INPUT, DayStrip, DateField } from "@/ui/kit";
 import { BarChart } from "@/ui/charts";
 
 const ACCENT = "#6FC29A";
@@ -260,7 +260,16 @@ function CategoryPicker({
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
   const defaults = kind === "expense" ? DEFAULT_EXPENSE_CATS : DEFAULT_INCOME_CATS;
-  const names = saved.length ? saved.map((c) => c.name) : defaults;
+  // Union, not one-or-the-other. Saving a single expense writes its category, which
+  // would otherwise make `saved` non-empty and hide every default from then on — the
+  // list collapsed to whatever you happened to use first.
+  const seen = new Set<string>();
+  const names = [...defaults, ...saved.map((c) => c.name)].filter((n) => {
+    const k = n.trim().toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   const add = async () => {
     if (!adding.trim()) { setEditing(false); return; }
@@ -385,10 +394,8 @@ function AddExpense() {
           onKeyDown={(e) => e.key === "Enter" && void save()}
           placeholder="What was it" style={INPUT} />
       </div>
-      <input type="date" value={date} max={today()}
-        onChange={(e) => e.target.value && setDate(e.target.value)}
-        aria-label="Date"
-        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
+      <DateField value={date} max={today()} ariaLabel="Date"
+        onChange={(v) => v && setDate(v)} style={{ marginTop: 8 }} />
 
       <CategoryPicker kind="expense" value={cat} onPick={setCat} />
 
@@ -485,9 +492,7 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find a transaction</div>
       <input value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Description or category" style={INPUT} />
-      <input type="date" value={date} max={today()}
-        onChange={(e) => setDate(e.target.value)} aria-label="Pick a date"
-        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
+      <DateField value={date} max={today()} onChange={setDate} style={{ marginTop: 8 }} />
       {date && (
         <button onClick={() => setDate("")} style={{
           border: "none", background: "transparent", color: C.soft, fontSize: 11.5,
@@ -692,9 +697,8 @@ function BalancePage({
             onKeyDown={(e) => e.key === "Enter" && void save()}
             placeholder="What was it for" style={INPUT} />
         </div>
-        <input type="date" value={date} max={today()}
-          onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Date"
-          style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
+        <DateField value={date} max={today()} ariaLabel="Date"
+          onChange={(v) => v && setDate(v)} style={{ marginTop: 8 }} />
 
         <CategoryPicker kind="income" value={cat} onPick={setCat} label="Source" />
         <ReceiptButtons />
@@ -779,9 +783,7 @@ function FindEntry({ txns }: { txns: Txn[] }) {
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find an entry</div>
       <input value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Description or source" style={INPUT} />
-      <input type="date" value={date} max={today()}
-        onChange={(e) => setDate(e.target.value)} aria-label="Pick a date"
-        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
+      <DateField value={date} max={today()} onChange={setDate} style={{ marginTop: 8 }} />
       {date && (
         <button onClick={() => setDate("")} style={{
           border: "none", background: "transparent", color: C.soft, fontSize: 11.5,

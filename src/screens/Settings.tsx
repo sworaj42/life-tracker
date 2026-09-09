@@ -21,6 +21,7 @@ import { buildExport, exportFilename, downloadJson } from "@/lib/export";
 import { weightStats } from "@/lib/calc/weight";
 import { C, num, input as inputStyle, cta } from "@/ui/tokens";
 import { Card, CardHeader, Eyebrow } from "@/ui/components";
+import { DateField } from "@/ui/kit";
 
 const ACCENT = "#B6A6E8";
 
@@ -101,10 +102,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
             onSave={(v) => set({ weight_target: v })} />
         </Row>
         <Row label="Target date" last>
-          <input
-            type="date" value={profile.target_date ?? ""}
-            onChange={(e) => void set({ target_date: e.target.value || null })}
-            style={{ ...fieldStyle, width: 140 }}
+          <DateField
+            value={profile.target_date ?? ""} ariaLabel="Target date"
+            onChange={(v) => void set({ target_date: v || null })}
+            style={{ width: 168 }}
           />
         </Row>
       </Card>

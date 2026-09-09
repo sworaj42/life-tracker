@@ -116,8 +116,55 @@ export function DayStrip({
           border: "1px solid rgba(255,255,255,.1)", borderRadius: 9,
           background: "rgba(255,255,255,.05)", padding: "6px 8px", fontSize: 12,
           color: C.ink, outline: "none", colorScheme: "dark", width: 124,
+          WebkitAppearance: "none", appearance: "none", textAlign: "center",
+          minHeight: 32,
         }} />
     </div>
   );
 }
 
+
+/**
+ * A date field that looks the same on both platforms.
+ *
+ * iOS Safari renders `input[type=date]` nothing like desktop Chrome: the value comes out
+ * centred and there is no calendar affordance at all, so the field reads as a mystery
+ * button. `-webkit-appearance: none` strips the native chrome, and the icon is drawn
+ * here rather than relied on from the browser. Tapping still opens the system picker.
+ */
+export function DateField({
+  value, onChange, max, ariaLabel = "Pick a date", style,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  max?: string;
+  ariaLabel?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span style={{ position: "relative", display: "block", ...style }}>
+      <input
+        type="date" value={value} max={max} aria-label={ariaLabel}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          ...INPUT,
+          WebkitAppearance: "none",
+          appearance: "none",
+          textAlign: "left",
+          paddingRight: 38,
+          colorScheme: "dark",
+          minHeight: 42,
+        }}
+      />
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.faint}
+        strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+        style={{
+          position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+          pointerEvents: "none",
+        }}>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </svg>
+    </span>
+  );
+}

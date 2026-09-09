@@ -123,6 +123,7 @@ export function DayNav({
           marginLeft: "auto", background: "rgba(255,255,255,.05)",
           border: "1px solid rgba(255,255,255,.1)", borderRadius: 9,
           color: C.soft, fontSize: 12, padding: "6px 8px", colorScheme: "dark",
+          WebkitAppearance: "none", appearance: "none", minHeight: 32,
         }}
       />
     </div>
