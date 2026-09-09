@@ -465,15 +465,25 @@ function NoteCard() {
         <DayStrip date={date} onChange={(d) => { setText(null); setDate(d); }} />
       </div>
 
+      {/*
+        The dog-ear is CUT, not painted over. The prototype covers the corner with a
+        solid #121829 triangle, which only disappears if the thing behind is flat
+        #121829 — here the note sits on a translucent card over a gradient, so a solid
+        patch reads as a grey block. Clipping the corner shows whatever is actually
+        behind it, on any background.
+      */}
       <div style={{
         position: "relative", borderRadius: "3px 3px 3px 14px",
         background: "linear-gradient(160deg,#E8D9A8 0%,#DFCE99 62%,#D6C48D 100%)",
         boxShadow: "0 10px 22px rgba(0,0,0,.32)", overflow: "hidden",
+        clipPath: "polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)",
       }}>
-        {/* the dog-eared corner */}
+        {/* The fold's shadow. Its outer half falls in the cut area and is clipped away,
+            leaving exactly the triangle that reads as folded paper. */}
         <div style={{
           position: "absolute", right: 0, top: 0, width: 26, height: 26,
-          background: "linear-gradient(225deg,#121829 0 50%,rgba(0,0,0,.18) 50%)",
+          background: "linear-gradient(225deg, rgba(0,0,0,.22) 0 50%, transparent 50%)",
+          pointerEvents: "none",
         }} />
         <textarea
           value={value}
