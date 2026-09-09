@@ -5,6 +5,7 @@ import { startSync, subscribe, drain, type SyncState } from "@/sync";
 import { today, toBS } from "@/lib/date";
 import { C, TABS, type TabKey, num } from "@/ui/tokens";
 import { Today } from "@/screens/Today";
+import { Fuel } from "@/screens/Fuel";
 import { QuickLog } from "@/screens/QuickLog";
 import { Login } from "@/screens/Login";
 import { Settings } from "@/screens/Settings";
@@ -91,6 +92,8 @@ export default function App() {
           <Settings onClose={() => setSettings(false)} />
         ) : tab === "today" ? (
           <Today onOpen={() => {}} />
+        ) : tab === "fuel" ? (
+          <Fuel />
         ) : (
           <Placeholder tab={tab} />
         )}
