@@ -102,55 +102,6 @@ export function weekStart(from: string = today()): string {
 }
 
 // ---------------------------------------------------------------------------
-// Epoch ↔ local wall clock
-//
-// Elapsed-time arithmetic must happen on epoch milliseconds; only the *naming* of
-// an instant ("11pm on the day the user was awake for") is a local-calendar question.
-// These convert between the two without ever doing hour arithmetic on local times.
-// ---------------------------------------------------------------------------
-
-const partsFmt = new Intl.DateTimeFormat("en-US", {
-  timeZone: TZ,
-  hour12: false,
-  year: "numeric", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit", second: "2-digit",
-});
-
-/** The zone's UTC offset in ms at a given instant. Nepal is a fixed +05:45, but this
- *  reads the real offset so the app stays correct anywhere. */
-export function localOffsetMs(at: number): number {
-  const whole = Math.floor(at / 1000) * 1000;
-  const p = partsFmt.formatToParts(new Date(whole));
-  const g = (t: string) => Number(p.find((x) => x.type === t)!.value);
-  const hour = g("hour") % 24; // some locales render midnight as 24
-  return Date.UTC(g("year"), g("month") - 1, g("day"), hour, g("minute"), g("second")) - whole;
-}
-
-/** Local hour (0-23) at an instant. */
-export function localHour(at: number): number {
-  return Number(partsFmt.formatToParts(new Date(at)).find((x) => x.type === "hour")!.value) % 24;
-}
-
-/** Minutes since local midnight at an instant. */
-export function localMinutes(at: number): number {
-  const p = partsFmt.formatToParts(new Date(at));
-  const g = (t: string) => Number(p.find((x) => x.type === t)!.value);
-  return (g("hour") % 24) * 60 + g("minute");
-}
-
-/**
- * The epoch ms of `hour:minute` on the local calendar day containing `at`.
- * Two passes, because the offset at the target instant may differ from the offset now.
- */
-export function atLocalTimeMs(at: number, hour: number, minute = 0): number {
-  const [y, m, d] = localDate(new Date(at)).split("-").map(Number);
-  const naive = Date.UTC(y, m - 1, d, hour, minute);
-  let guess = naive - localOffsetMs(at);
-  guess = naive - localOffsetMs(guess);
-  return guess;
-}
-
-// ---------------------------------------------------------------------------
 // Bikram Sambat
 //
 // Month lengths differ per year and are not derivable from a formula, so they are

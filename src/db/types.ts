@@ -114,11 +114,7 @@ export interface Profile {
 
   cup_mg: number;
   caffeine_half_life_h: number;
-  /** Deprecated: conflated the wear-off floor with the bedtime budget. Superseded by
-   *  bedtime_limit_mg; kept so existing rows still read. */
   sleep_mg_threshold: number;
-  /** Most caffeine (mg) that may still be aboard at sleep onset. */
-  bedtime_limit_mg: number;
 
   weekly_budget: number;
   balance_opening: number;
@@ -158,7 +154,6 @@ export const DEFAULT_PROFILE: Profile = {
   cup_mg: 80,
   caffeine_half_life_h: 5,
   sleep_mg_threshold: 50,
-  bedtime_limit_mg: 40,
 
   weekly_budget: 7000,
   balance_opening: 0,
