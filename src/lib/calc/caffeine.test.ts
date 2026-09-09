@@ -215,7 +215,7 @@ describe("resolveSleepOnset", () => {
 });
 
 describe("logical day — dayStartHour, not midnight", () => {
-  it("an 11pm espresso belongs to the day the user was awake for", () => {
+  it("an 11pm coffee belongs to the day the user was awake for", () => {
     const doses: Dose[] = [{ mg: 65, at: at("23:00") }, { mg: 95, at: at("08:00") }];
     const t = dayTotals(doses, at("01:00", "2026-09-10"), P, deps);
     expect(t.cups).toBe(2);

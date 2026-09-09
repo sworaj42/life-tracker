@@ -344,8 +344,13 @@ export function dosesOnLogicalDay(
   return doses.filter((d) => d.at >= start && d.at < end);
 }
 
-/** Cups is habit, mg is physiology. Four espressos and four cold brews are the same
- *  count and 450 mg apart, so both are shown. */
+/**
+ * Cups is habit, mg is physiology, and they are not the same question.
+ *
+ * With both brews at 80 mg the two track each other exactly — but per-entry mg is
+ * editable and brew mg is user-settable, so they diverge the moment a stronger pot gets
+ * logged honestly. Showing only cups would hide that.
+ */
 export function dayTotals(
   doses: Dose[],
   at: number,
@@ -358,30 +363,29 @@ export function dayTotals(
 }
 
 // ---------------------------------------------------------------------------
-// Drinks
+// Brews
 //
-// Reversal of the original "80 mg flat" decision, recorded in SPEC.md §4. Flat 80 mg is
-// not less imprecise than per-drink values — it is imprecise AND biased one way per
-// person, understating cold brew by 2.2x and overstating black tea by 0.6x. The
-// half-life band handles precision; these handle accuracy. Different problems.
+// SPEC.md §4 stands: 80 mg flat is NOT a developer default. It is calibrated to the two
+// drinks actually consumed — half a tablespoon of Nescafé Gold, and a moka pot — which
+// genuinely converge near 80 mg. A preset library would add per-drink figures for drinks
+// nobody here drinks, and per-brew precision was refused as false precision on purpose.
 //
-// mg rounded to the nearest 5: the underlying figures vary more than that between
-// batches, so extra digits would be decoration. User-editable per drink.
+// So this is two quick-log shortcuts, not a catalogue. Both default to 80 mg, both are
+// user-editable, and the mg must be visible at log time rather than behind an edit
+// screen — if the brew changes, the number has to be somewhere it will be noticed going
+// stale.
+//
+// Note this is separate from BUG 2: the wear-off threshold was wrong on its own merits,
+// and the varied dose sizes that prove proportional scaling live in test fixtures.
 // ---------------------------------------------------------------------------
 
-export interface Drink {
+export interface Brew {
   id: string;
   name: string;
   mg: number;
 }
 
-export const DEFAULT_DRINKS: Drink[] = [
-  { id: "espresso", name: "Espresso", mg: 65 },
-  { id: "drip", name: "Drip coffee", mg: 95 },
-  { id: "coldbrew", name: "Cold brew", mg: 175 },
-  { id: "instant", name: "Instant", mg: 60 },
-  { id: "tea", name: "Black tea", mg: 45 },
-  { id: "redbull", name: "Red Bull", mg: 80 },
-  { id: "monster", name: "Monster", mg: 160 },
-  { id: "decaf", name: "Decaf", mg: 5 },
+export const DEFAULT_BREWS: Brew[] = [
+  { id: "instant", name: "Instant", mg: 80 },
+  { id: "moka", name: "Moka", mg: 80 },
 ];
