@@ -1,391 +1,301 @@
 /**
- * Caffeine — one-compartment model with first-order absorption.
+ * Caffeine — pure exponential decay.
  *
- * Pure. No I/O, no clock reads, no DB or UI imports. `now` is always passed in, and
- * every timestamp is **UTC epoch milliseconds**; elapsed-hour arithmetic on local
- * wall-clock times silently corrupts across a DST transition.
+ * Two values drive the coffee card: how much is still in you at bedtime, and when the
+ * next cup can sensibly go. Pure module: no UI or DB imports, no clock reads, `now`
+ * always passed in. Every timestamp is UTC epoch ms; elapsed-hour arithmetic on local
+ * wall-clock strings silently corrupts across a DST transition.
  *
- * Caffeine is first-order and linear at normal doses, so doses superpose: the total
- * level is the sum of independently absorbing-and-decaying doses. No simulation loop.
+ * Doses superpose linearly, so the total is the sum of independent decays. No loop.
  *
- *     ke = ln2 / halfLifeH
- *     ka = ln2 / absorptionHalfLifeH
- *     A(mg, h) = mg · (ka/(ka−ke)) · (e^(−ke·h) − e^(−ka·h))
- *
- * ONE model, ONE source of truth: both solvers below bisect against `levelAt`. A
- * closed-form curfew sitting beside an absorption-model level would disagree and drift.
- *
- * Nothing here may be persisted. Level is a pure function of (doses, t, profile), so
- * an edit, a backfill or a profile change has to recompute it.
+ * DELIBERATE SIMPLIFICATION, not an oversight. This replaces an earlier one-compartment
+ * model with first-order absorption, and reverses four of its decisions: absorption,
+ * bisection solving, a 50mg bedtime budget, and a proportional wear-off floor. Pure
+ * decay overstates during the first ~50 minutes after a drink — at the instant of
+ * logging it reads the full dose where the true figure is near zero — but the two
+ * converge by ~52 minutes and from there pure decay tracks within ~1mg (at 9h it reads
+ * 22.97 against 23.78, very slightly LOW). Rather than reintroduce absorption, the
+ * readout is suppressed for exactly the window where the model is wrong: see
+ * `nowReadout`.
  */
 
-export interface Dose {
-  /** UTC epoch ms. */
-  at: number;
+export interface Drink {
+  /** UTC epoch ms. Read from the event's `occurred_at`, never a local clock string. */
+  time: number;
   mg: number;
 }
 
-export interface SleepLog {
-  /** UTC epoch ms of sleep ONSET — not in-bed time. */
-  onsetAt: number;
-}
-
-export type WearOffMode = "absolute" | "proportional";
-
-export interface CaffeineProfile {
-  halfLifeH: number;
-  absorptionHalfLifeH: number;
-  wearOffMode: WearOffMode;
-  wearOffThresholdMg: number;
-  wearOffFraction: number;
-  bedtimeBudgetMg: number;
+export interface CaffeineSettings {
+  halfLifeHours: number;
+  /** Below this, previous drinks are considered worn off — the FLOOR on a next cup. */
+  focusFloorMg: number;
+  /** Most that may still be aboard at bedtime — the CEILING on a next cup. */
+  bedtimeLimitMg: number;
   dailyLimitMg: number;
+  /** Minimum spacing between drinks, regardless of what the maths says. */
+  minGapHours: number;
+  stepMinutes: number;
+  /** Prefill for the input and the assumed size when projecting a next cup. */
+  defaultCupMg: number;
+  /** A logical day starts here, not at midnight. */
   dayStartHour: number;
-  /** Cold-start fallback only. Real onset comes from the sleep log when there is one. */
-  sleepOnsetHour: number;
+  /** How long after a drink the level readout is suppressed as unmodelled. */
+  settlingMinutes: number;
 }
 
-export const DEFAULT_CAFFEINE: CaffeineProfile = {
-  halfLifeH: 5,
-  absorptionHalfLifeH: 0.17,
-  // Proportional is the default because it scales with dose size. An absolute floor
-  // means a small dose is declared "worn off" before it ever peaked.
-  wearOffMode: "proportional",
-  wearOffThresholdMg: 40,
-  wearOffFraction: 0.5,
-  bedtimeBudgetMg: 50,
+export const CAFFEINE_DEFAULTS: CaffeineSettings = {
+  halfLifeHours: 5,
+  focusFloorMg: 40,
+  // 40, not 20. At 20 a second 80mg cup before a 23:00 bedtime is arithmetically
+  // impossible on every schedule bar a 05:00/10:00 pair, so the card would answer
+  // "not today" after the first cup in nearly every real pattern and its output would
+  // be effectively constant. 40 preserves genuine open/closed variation.
+  bedtimeLimitMg: 40,
   dailyLimitMg: 400,
+  minGapHours: 3,
+  stepMinutes: 15,
+  defaultCupMg: 80,
   dayStartHour: 4,
-  sleepOnsetHour: 23,
+  settlingMinutes: 50,
 };
 
 const H_MS = 3_600_000;
-const LN2 = Math.LN2;
-/** Bisection tolerance. Must stay well under a minute — a coarse grid is exactly the
- *  kind of thing that quietly reappears and shifts every answer by minutes. */
-const TOL_MS = 1_000;
 
-// ---------------------------------------------------------------------------
-// The model
-// ---------------------------------------------------------------------------
-
-/** Contribution of a single dose `h` hours after it was taken. Zero before and at t=0. */
-export function doseAt(mg: number, h: number, p: CaffeineProfile): number {
-  if (!Number.isFinite(h) || h <= 0 || mg <= 0) return 0;
-  const ke = LN2 / p.halfLifeH;
-  const ka = LN2 / p.absorptionHalfLifeH;
-  // ka === ke makes the ka/(ka−ke) term divide by zero. The limiting form is the
-  // derivative case: mg · ke · h · e^(−ke·h).
-  if (Math.abs(ka - ke) < 1e-9) return mg * ke * h * Math.exp(-ke * h);
-  return mg * (ka / (ka - ke)) * (Math.exp(-ke * h) - Math.exp(-ka * h));
-}
-
-/** Total caffeine in the body at instant `t`. */
-export function levelAt(doses: Dose[], t: number, p: CaffeineProfile): number {
-  let sum = 0;
-  for (const d of doses) sum += doseAt(d.mg, (t - d.at) / H_MS, p);
-  return sum;
-}
-
-/** Hours from a dose to its peak. Precomputed constant of the profile, not of the dose. */
-export function tmaxH(p: CaffeineProfile): number {
-  const ke = LN2 / p.halfLifeH;
-  const ka = LN2 / p.absorptionHalfLifeH;
-  if (Math.abs(ka - ke) < 1e-9) return 1 / ke;
-  return Math.log(ka / ke) / (ka - ke);
-}
-
-/**
- * A projected level as a band, not a point.
- *
- * Half-life varies from ~3 h (smokers) to 7 h+ (oral contraceptives), with large CYP1A2
- * genetic variation on top. 100 mg ten hours before sleep is 10 mg at a 3 h half-life
- * and 37 mg at 7 h. A single confident figure is false precision, and the first time it
- * is visibly wrong the whole app stops being believed.
- */
-export function levelRangeAt(
-  doses: Dose[],
-  t: number,
-  p: CaffeineProfile,
-): { low: number; mid: number; high: number } {
-  const fast = { ...p, halfLifeH: Math.max(0.5, p.halfLifeH - 1.5) };
-  const slow = { ...p, halfLifeH: p.halfLifeH + 2 };
-  return {
-    low: levelAt(doses, t, fast),
-    mid: levelAt(doses, t, p),
-    high: levelAt(doses, t, slow),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Solver
-// ---------------------------------------------------------------------------
-
-/**
- * Bisect f to its zero. `tPos` must satisfy f > 0 and `tNeg` f <= 0; they may be in
- * either time order. Returns the endpoint on the non-positive side, so the answer is
- * always a time that actually satisfies the constraint.
- */
-function solve(f: (t: number) => number, tPos: number, tNeg: number): number {
-  let pos = tPos;
-  let neg = tNeg;
-  for (let i = 0; i < 200 && Math.abs(neg - pos) > TOL_MS; i++) {
-    const mid = (pos + neg) / 2;
-    if (f(mid) > 0) pos = mid;
-    else neg = mid;
-  }
-  return neg;
-}
-
-// ---------------------------------------------------------------------------
-// Floor — when the previous dose has worn off
-// ---------------------------------------------------------------------------
-
-/** The level below which the last dose counts as worn off. */
-export function wearOffThreshold(doses: Dose[], now: number, p: CaffeineProfile): number {
-  if (p.wearOffMode === "absolute") return p.wearOffThresholdMg;
-  const taken = doses.filter((d) => d.at <= now);
-  const pool = taken.length ? taken : doses;
-  if (!pool.length) return p.wearOffThresholdMg;
-  const latest = pool.reduce((a, b) => (b.at > a.at ? b : a));
-  return p.wearOffFraction * latest.mg;
-}
-
-/**
- * The earliest time the previous dose has worn off — the FLOOR on the next cup.
- *
- * The curve RISES for the first ~52 minutes after a dose, so bisecting from `now` on a
- * rising curve returns garbage. The search therefore starts at the last dose's peak.
- *
- * Returns `now` when the level never reaches the threshold at all — which is exactly
- * what an absolute threshold does to a small dose, and why it is not the default.
- */
-export function wearOffTime(doses: Dose[], now: number, p: CaffeineProfile): number | null {
-  if (!doses.length) return now;
-
-  const threshold = wearOffThreshold(doses, now, p);
-  const lastDose = doses.reduce((a, b) => (b.at > a.at ? b : a)).at;
-  const from = Math.max(now, lastDose + tmaxH(p) * H_MS);
-
-  const f = (t: number) => levelAt(doses, t, p) - threshold;
-  if (f(from) <= 0) return now;
-
-  const far = from + 72 * H_MS;
-  if (f(far) > 0) return null; // pathological profile; no crossing within three days
-  return solve(f, from, far);
-}
-
-// ---------------------------------------------------------------------------
-// Ceiling — the latest a planned dose can be taken
-// ---------------------------------------------------------------------------
-
-/**
- * The latest time `plannedMg` can be drunk and still be under the bedtime budget at
- * sleep onset — the CEILING on the next cup. May be in the past, which is the honest
- * answer to "that cup was already too late".
- *
- * Clamped to `onset − tmax`. Without the clamp the solver happily finds a slot minutes
- * before sleep, because a dose that has not finished absorbing scores low at onset.
- * Physiologically true, terrible advice.
- *
- * Returns null when the existing doses alone already exceed the budget: there is no
- * time at which drinking more is within it.
- */
-export function caffeineCurfew(
-  doses: Dose[],
-  onset: number,
-  plannedMg: number,
-  p: CaffeineProfile,
-): number | null {
-  const residual = levelAt(doses, onset, p);
-  const room = p.bedtimeBudgetMg - residual;
-  if (room <= 0) return null;
-
-  const latest = onset - tmaxH(p) * H_MS;
-  if (plannedMg <= 0) return latest;
-
-  // Past the clamp we are on the descending limb, where the contribution at onset
-  // increases monotonically with the time of drinking.
-  const contribution = (t: number) => doseAt(plannedMg, (onset - t) / H_MS, p);
-  const f = (t: number) => contribution(t) - room;
-
-  if (f(latest) <= 0) return latest; // even drinking as late as allowed stays in budget
-
-  const early = onset - 72 * H_MS;
-  if (f(early) > 0) return null;
-  return solve(f, latest, early);
-}
-
-// ---------------------------------------------------------------------------
-// The window — floor and ceiling composed
-// ---------------------------------------------------------------------------
-
-export type Window =
-  | { kind: "open"; from: number; until: number }
-  | { kind: "closed"; drinkBefore: number | null };
-
-/**
- * When the next dose of `plannedMg` can be taken.
- *
- * There are two independent constraints and the old implementation had only the floor,
- * so it always returned a time — including times that put more caffeine at bedtime than
- * doing nothing at all. This can return an empty window and say so.
- */
-export function nextCupWindow(
-  doses: Dose[],
-  now: number,
-  onset: number,
-  plannedMg: number,
-  p: CaffeineProfile,
-): Window {
-  const ceiling = caffeineCurfew(doses, onset, plannedMg, p);
-  if (ceiling === null) return { kind: "closed", drinkBefore: null };
-
-  const floor = wearOffTime(doses, now, p);
-  if (floor === null) return { kind: "closed", drinkBefore: ceiling };
-
-  const from = Math.max(floor, now);
-  if (ceiling <= from) return { kind: "closed", drinkBefore: ceiling };
-  return { kind: "open", from, until: ceiling };
-}
-
-// ---------------------------------------------------------------------------
-// Sleep onset
-//
-// The single most load-bearing input in the feature: a three-hour change in onset moves
-// the curfew by more than five hours, dwarfing every refinement to the model itself.
-// This function owns ALL day-boundary reasoning; nothing else may derive an onset.
-// ---------------------------------------------------------------------------
-
-export type OnsetSource = "sleep_log_median" | "profile_default" | "user_override";
-
-export interface OnsetResult {
-  at: number;
-  source: OnsetSource;
-  sampleSize?: number;
-}
-
-/** Fewest nights before a median means anything rather than echoing one noisy night. */
-const MIN_SLEEP_SAMPLES = 3;
-const SLEEP_WINDOW_DAYS = 14;
-
-export interface OnsetDeps {
-  /** Epoch ms of `hour:00` on the local calendar day containing `at`. */
+/** Converting an instant to "11pm on the day the user was awake for" is inherently a
+ *  timezone question, so it is injected rather than imported. */
+export interface ClockDeps {
+  /** Epoch ms of `hour:minute` on the local calendar day containing `at`. */
   atLocalTimeMs: (at: number, hour: number, minute?: number) => number;
   /** Minutes since local midnight at an instant. */
   localMinutes: (at: number) => number;
 }
 
+// ---------------------------------------------------------------------------
+// Core
+// ---------------------------------------------------------------------------
+
+export function caffeineRemaining(
+  doseMg: number,
+  hoursPassed: number,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): number {
+  if (!Number.isFinite(hoursPassed) || hoursPassed < 0) return 0;
+  return doseMg * Math.pow(0.5, hoursPassed / s.halfLifeHours);
+}
+
+/** Total still aboard at `targetTime`. Future-dated drinks contribute nothing. */
+export function totalRemaining(
+  drinks: Drink[],
+  targetTime: number,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): number {
+  return drinks.reduce((total, drink) => {
+    const hoursPassed = (targetTime - drink.time) / H_MS;
+    if (hoursPassed < 0) return total; // ignore future doses
+    return total + caffeineRemaining(drink.mg, hoursPassed, s);
+  }, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Logical day
+// ---------------------------------------------------------------------------
+
 /**
- * Resolve tonight's sleep onset.
+ * The drinks belonging to the logical day containing `at`. An 11pm coffee belongs to the
+ * day the user was awake for, not to the calendar date after midnight.
  *
- * The logical day starts at `dayStartHour`, so between midnight and 04:00 the relevant
- * onset is the one belonging to *yesterday* — already in the past. That is deliberate:
- * someone up at 00:30 has no projection headroom left, and "next 23:00 from now" would
- * report 22.5 hours of it. An onset in the past is the honest answer, and callers see
- * the window close rather than open impossibly wide.
+ * This matters more than it looks: the caller fetches a rolling 36h window, so without
+ * day-scoping the daily total would accumulate across days and the cap would latch on
+ * permanently after five cups ever.
  */
-export function resolveSleepOnset(
+export function drinksInLogicalDay(
+  drinks: Drink[],
+  at: number,
+  deps: ClockDeps,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): Drink[] {
+  const beforeDayStart = deps.localMinutes(at) < s.dayStartHour * 60;
+  const anchor = beforeDayStart ? at - 24 * H_MS : at;
+  const start = deps.atLocalTimeMs(anchor, s.dayStartHour);
+  return drinks.filter((d) => d.time >= start && d.time < start + 24 * H_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Bedtime
+// ---------------------------------------------------------------------------
+
+export type Bedtime =
+  | { kind: "upcoming"; at: number }
+  | { kind: "past_due"; at: number };
+
+/**
+ * Tonight's bedtime — the bedtime of the current LOGICAL day, flagged as past when it
+ * has already gone.
+ *
+ * The naive "next occurrence after now" is what produced the bug: at 00:30 it returns
+ * 22.5 hours out, which is technically true and useless — the user is up past bedtime
+ * and the honest projection horizon is about zero.
+ *
+ * Note this generalises the spec slightly. The brief carved out only midnight → day
+ * start, but anchoring on the logical day means 23:30 with a 23:00 bedtime also reports
+ * past_due rather than pointing 23.5 hours ahead at tomorrow. Same bug, same fix, one
+ * rule instead of a special case.
+ */
+export function resolveBedtime(
   now: number,
-  sleepLogs: SleepLog[],
-  p: CaffeineProfile,
-  deps: OnsetDeps,
-  override?: number | null,
-): OnsetResult {
-  if (override != null) return { at: override, source: "user_override" };
-
-  // Anchor on the logical day: before dayStartHour we still belong to yesterday.
-  const beforeDayStart = deps.localMinutes(now) < p.dayStartHour * 60;
+  bedtimeHour: number,
+  deps: ClockDeps,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): Bedtime {
+  const beforeDayStart = deps.localMinutes(now) < s.dayStartHour * 60;
   const anchor = beforeDayStart ? now - 24 * H_MS : now;
-  const dayStart = deps.atLocalTimeMs(anchor, p.dayStartHour);
+  const at = deps.atLocalTimeMs(anchor, bedtimeHour);
+  return at <= now ? { kind: "past_due", at } : { kind: "upcoming", at };
+}
 
-  const recent = sleepLogs.filter(
-    (s) => s.onsetAt <= now && s.onsetAt >= now - SLEEP_WINDOW_DAYS * 24 * H_MS,
-  );
+export type BedtimeTier = "green" | "orange" | "red";
 
-  if (recent.length >= MIN_SLEEP_SAMPLES) {
-    // Measure each onset from the day start, so 23:00 and 00:30 sit next to each other
-    // (1140 and 1230 minutes) instead of at opposite ends of a clock face.
-    const offsets = recent
-      .map((s) => (deps.localMinutes(s.onsetAt) - p.dayStartHour * 60 + 1440) % 1440)
-      .sort((a, b) => a - b);
-    const mid = Math.floor(offsets.length / 2);
-    const median =
-      offsets.length % 2 ? offsets[mid] : (offsets[mid - 1] + offsets[mid]) / 2;
-    return {
-      at: dayStart + median * 60_000,
-      source: "sleep_log_median",
-      sampleSize: recent.length,
-    };
+/** Tiers derive from the limit, never from hardcoded numbers — otherwise the card shows
+ *  a cautious orange next to an absolute "not today". */
+export function bedtimeTier(
+  mgAtBedtime: number,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): BedtimeTier {
+  if (mgAtBedtime <= s.bedtimeLimitMg) return "green";
+  if (mgAtBedtime <= s.bedtimeLimitMg * 1.5) return "orange";
+  return "red";
+}
+
+// ---------------------------------------------------------------------------
+// Current level readout
+// ---------------------------------------------------------------------------
+
+export type Readout =
+  | { kind: "settling" }
+  | { kind: "estimate"; mg: number };
+
+/**
+ * What to show for "in you now".
+ *
+ * Pure decay jumps to the full dose the instant a drink is logged, while real absorption
+ * peaks around 52 minutes in. Rather than model that, the number is withheld for exactly
+ * the window where it would be wrong — the card says "just had one" instead. Zero added
+ * maths, honest where the model is not.
+ */
+export function nowReadout(
+  drinks: Drink[],
+  now: number,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): Readout {
+  const past = drinks.filter((d) => d.time <= now);
+  if (past.length) {
+    const latest = Math.max(...past.map((d) => d.time));
+    if (now - latest < s.settlingMinutes * 60_000) return { kind: "settling" };
+  }
+  // Never show decimals: the precision is not there to justify them.
+  return { kind: "estimate", mg: Math.round(totalRemaining(drinks, now, s)) };
+}
+
+// ---------------------------------------------------------------------------
+// Next cup
+// ---------------------------------------------------------------------------
+
+export type NextCup =
+  | { ok: true; at: number; projectedBedtimeMg: number }
+  | { ok: false; reason: "daily_cap"; dailyTotal: number }
+  | { ok: false; reason: "no_headroom"; bedtimeBase: number }
+  | { ok: false; reason: "too_late"; latestViable: number | null };
+
+/**
+ * The latest a cup could still go, solved directly rather than grid-searched.
+ *
+ * Returns null when it would be unhelpful: no headroom, already past, or inside the
+ * minimum-gap window. An unclamped value produces "a half cup works until 11:20" at
+ * 14:00, which is worse than saying nothing.
+ */
+export function latestViableTime(
+  bedtimeBase: number,
+  cupMg: number,
+  bedtime: number,
+  now: number,
+  lastDrinkTime: number,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): number | null {
+  const headroom = s.bedtimeLimitMg - bedtimeBase;
+  if (headroom <= 0) return null;
+
+  const hoursBefore = s.halfLifeHours * Math.log2(cupMg / headroom);
+  // Headroom bigger than the cup gives a negative offset, i.e. later than bedtime.
+  const latest = Math.min(bedtime, bedtime - hoursBefore * H_MS);
+
+  if (latest < now) return null;
+  if (latest - lastDrinkTime < s.minGapHours * H_MS) return null;
+  return latest;
+}
+
+/**
+ * When the next cup can go.
+ *
+ * Three independent constraints, all mandatory:
+ *   GAP     — a minimum spacing between drinks
+ *   FLOOR   — previous drinks have decayed enough to be worth topping up
+ *   CEILING — the new cup will not still be aboard at bedtime
+ *
+ * The original implementation had only the floor, which is why it returned times that
+ * were simultaneously too late to be safe and too early to be useful.
+ *
+ * A 15-minute grid rather than bisection, deliberately: it only ever returns times it
+ * actually verified against all three checks, and 15 minutes is the display granularity
+ * anyway.
+ */
+export function findNextCup(
+  drinks: Drink[],
+  now: number,
+  bedtime: number,
+  deps: ClockDeps,
+  cupMg: number = CAFFEINE_DEFAULTS.defaultCupMg,
+  s: CaffeineSettings = CAFFEINE_DEFAULTS,
+): NextCup {
+  const today = drinksInLogicalDay(drinks, now, deps, s);
+
+  // Day-scoped, not whole-array. The caller passes a rolling 36h window, so summing all
+  // of it would carry yesterday's cups into today's cap.
+  const dailyTotal = today.reduce((sum, d) => sum + d.mg, 0);
+  if (dailyTotal + cupMg > s.dailyLimitMg) {
+    return { ok: false, reason: "daily_cap", dailyTotal };
   }
 
-  const fallback = ((p.sleepOnsetHour - p.dayStartHour + 24) % 24) * 60;
-  return { at: dayStart + fallback * 60_000, source: "profile_default" };
+  // Knowable before the loop; otherwise it takes 36 iterations to discover.
+  const bedtimeBase = totalRemaining(drinks, bedtime, s);
+  if (bedtimeBase >= s.bedtimeLimitMg) {
+    return { ok: false, reason: "no_headroom", bedtimeBase };
+  }
+
+  // Without the gap check, any dose at or below the floor starts at or below it, so the
+  // floor passes at `now` and logging a 40mg drink makes the app say "next cup: now".
+  const past = today.filter((d) => d.time <= now);
+  const lastDrinkTime = past.length ? Math.max(...past.map((d) => d.time)) : -Infinity;
+
+  for (let t = now; t < bedtime; t += s.stepMinutes * 60_000) {
+    if (t - lastDrinkTime < s.minGapHours * H_MS) continue; // gap
+    // Strictly greater: a level sitting exactly ON the floor passes. The 80mg@08:00
+    // fixture lands on 40.000 at 13:00 and clears by zero margin. Math.pow(0.5, 1) is
+    // exact, so this is safe — but do NOT "fix" this to >=, which would silently move
+    // that answer to 13:15.
+    if (totalRemaining(drinks, t, s) > s.focusFloorMg) continue; // floor
+
+    const hoursUntilBed = (bedtime - t) / H_MS;
+    const projected = bedtimeBase + caffeineRemaining(cupMg, hoursUntilBed, s);
+    if (projected <= s.bedtimeLimitMg) {
+      return { ok: true, at: t, projectedBedtimeMg: projected }; // ceiling
+    }
+  }
+
+  // Three distinct failure reasons rather than one bare null: all render as "not today"
+  // but each needs different advice.
+  return {
+    ok: false,
+    reason: "too_late",
+    latestViable: latestViableTime(bedtimeBase, cupMg, bedtime, now, lastDrinkTime, s),
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Day accounting
-// ---------------------------------------------------------------------------
-
-/**
- * The doses belonging to the logical day containing `at`. An 11pm espresso belongs to
- * the day the user was awake for, not to the calendar date after midnight.
- */
-export function dosesOnLogicalDay(
-  doses: Dose[],
-  at: number,
-  p: CaffeineProfile,
-  deps: OnsetDeps,
-): Dose[] {
-  const beforeDayStart = deps.localMinutes(at) < p.dayStartHour * 60;
-  const anchor = beforeDayStart ? at - 24 * H_MS : at;
-  const start = deps.atLocalTimeMs(anchor, p.dayStartHour);
-  const end = start + 24 * H_MS;
-  return doses.filter((d) => d.at >= start && d.at < end);
-}
-
-/**
- * Cups is habit, mg is physiology, and they are not the same question.
- *
- * With both brews at 80 mg the two track each other exactly — but per-entry mg is
- * editable and brew mg is user-settable, so they diverge the moment a stronger pot gets
- * logged honestly. Showing only cups would hide that.
- */
-export function dayTotals(
-  doses: Dose[],
-  at: number,
-  p: CaffeineProfile,
-  deps: OnsetDeps,
-): { cups: number; mg: number; overLimit: boolean } {
-  const day = dosesOnLogicalDay(doses, at, p, deps);
-  const mg = day.reduce((s, d) => s + d.mg, 0);
-  return { cups: day.length, mg, overLimit: mg > p.dailyLimitMg };
-}
-
-// ---------------------------------------------------------------------------
-// Brews
-//
-// SPEC.md §4 stands: 80 mg flat is NOT a developer default. It is calibrated to the two
-// drinks actually consumed — half a tablespoon of Nescafé Gold, and a moka pot — which
-// genuinely converge near 80 mg. A preset library would add per-drink figures for drinks
-// nobody here drinks, and per-brew precision was refused as false precision on purpose.
-//
-// So this is two quick-log shortcuts, not a catalogue. Both default to 80 mg, both are
-// user-editable, and the mg must be visible at log time rather than behind an edit
-// screen — if the brew changes, the number has to be somewhere it will be noticed going
-// stale.
-//
-// Note this is separate from BUG 2: the wear-off threshold was wrong on its own merits,
-// and the varied dose sizes that prove proportional scaling live in test fixtures.
-// ---------------------------------------------------------------------------
-
-export interface Brew {
-  id: string;
-  name: string;
-  mg: number;
-}
-
-export const DEFAULT_BREWS: Brew[] = [
-  { id: "instant", name: "Instant", mg: 80 },
-  { id: "moka", name: "Moka", mg: 80 },
-];
