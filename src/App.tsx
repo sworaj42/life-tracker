@@ -7,12 +7,14 @@ import { C, TABS, type TabKey, num } from "@/ui/tokens";
 import { Today } from "@/screens/Today";
 import { QuickLog } from "@/screens/QuickLog";
 import { Login } from "@/screens/Login";
+import { Settings } from "@/screens/Settings";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<TabKey>("today");
   const [logging, setLogging] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [sync, setSync] = useState<SyncState | null>(null);
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function App() {
       paddingTop: "env(safe-area-inset-top)",
     }}>
       <div style={{ maxWidth: 520, margin: "0 auto", padding: "14px 14px 128px" }}>
-        <header style={{ marginBottom: 14 }}>
+        {!settings && <header style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h1 style={{
               fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", margin: 0, color: C.ink,
@@ -54,6 +56,21 @@ export default function App() {
               {title}
             </h1>
             <SyncPill sync={sync} />
+            <button
+              onClick={() => setSettings(true)}
+              aria-label="Settings"
+              style={{
+                marginLeft: "auto", width: 36, height: 36, borderRadius: 11,
+                border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.05)",
+                color: C.soft, cursor: "pointer", display: "grid", placeItems: "center",
+              }}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 3.6 1.65 1.65 0 0010 2.09V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 8v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+              </svg>
+            </button>
           </div>
           <div style={{ fontSize: 12, color: C.faint, marginTop: 2, ...num }}>
             {new Date().toLocaleDateString(undefined, {
@@ -61,12 +78,18 @@ export default function App() {
             })}
             {toBS(today()) && <> · {toBS(today())}</>}
           </div>
-        </header>
+        </header>}
 
-        {tab === "today" ? <Today onOpen={() => {}} /> : <Placeholder tab={tab} />}
+        {settings ? (
+          <Settings onClose={() => setSettings(false)} />
+        ) : tab === "today" ? (
+          <Today onOpen={() => {}} />
+        ) : (
+          <Placeholder tab={tab} />
+        )}
       </div>
 
-      <button
+      {!settings && <button
         onClick={() => setLogging(true)}
         aria-label="Log something"
         style={{
@@ -78,7 +101,7 @@ export default function App() {
         }}
       >
         +
-      </button>
+      </button>}
 
       <nav style={{
         position: "fixed", left: 0, right: 0, zIndex: 50,
@@ -97,7 +120,7 @@ export default function App() {
           {TABS.map((t) => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => { setTab(t.key); setSettings(false); }}
               aria-label={t.label}
               aria-current={tab === t.key}
               style={{
