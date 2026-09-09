@@ -26,12 +26,13 @@ import {
 } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
 import { CARD, TILE, INPUT, ghost, TitleLink, DayStrip } from "@/ui/kit";
+import { CaloriesPage } from "./detail/CaloriesPage";
 
 const ACCENT = "#E2B461";
 const ON_ACCENT = "#1F1708";
 
 export function Fuel() {
-  const [page, setPage] = useState<"tab" | "food">("tab");
+  const [page, setPage] = useState<"tab" | "food" | "calories">("tab");
   const [date, setDate] = useState(today());
   const [meal, setMeal] = useState<Meal>("lunch");
 
@@ -47,6 +48,7 @@ export function Fuel() {
   const food = dayFood(onDay);
   const burn = dayBurn(onDay);
 
+  if (page === "calories") return <CaloriesPage onBack={() => setPage("tab")} />;
   if (page === "food") {
     return (
       <FoodPage
@@ -58,7 +60,8 @@ export function Fuel() {
 
   return (
     <>
-      <CaloriesCard burn={burn} food={food} maint={maint} goal={goal} />
+      <CaloriesCard burn={burn} food={food} maint={maint} goal={goal}
+        onOpen={() => setPage("calories")} />
       <FoodCard
         food={food} goal={goal}
         onOpen={() => setPage("food")}
@@ -72,8 +75,11 @@ export function Fuel() {
 // ---------------------------------------------------------------------------
 
 function CaloriesCard({
-  burn, food, maint, goal,
-}: { burn: ReturnType<typeof dayBurn>; food: DayFood; maint: Maintenance; goal: Targets }) {
+  burn, food, maint, goal, onOpen,
+}: {
+  burn: ReturnType<typeof dayBurn>; food: DayFood; maint: Maintenance; goal: Targets;
+  onOpen: () => void;
+}) {
   const [showMath, setShowMath] = useState(false);
 
   // The meter runs to maintenance. The target sits before it, with the gap between
@@ -90,7 +96,7 @@ function CaloriesCard({
         display: "flex", justifyContent: "space-between", alignItems: "center",
         marginBottom: 12, minHeight: 36,
       }}>
-        <TitleLink label="Calories" color={ACCENT} />
+        <TitleLink label="Calories" color={ACCENT} onClick={onOpen} />
         <span style={{ fontSize: 12.5, color: C.faint }}>
           {burn.hasData ? "from Health" : "no Health data yet"}
         </span>

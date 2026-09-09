@@ -93,7 +93,7 @@ export default function App() {
         {settings ? (
           <Settings onClose={() => setSettings(false)} />
         ) : tab === "today" ? (
-          <Today onOpen={() => {}} />
+          <Today />
         ) : tab === "fuel" ? (
           <Fuel />
         ) : tab === "train" ? (

@@ -21,10 +21,17 @@ import { coffeeDay } from "@/lib/calc/coffee";
 import { weightStats } from "@/lib/calc/weight";
 import { C, STAGE, num } from "@/ui/tokens";
 import { CARD, TILE, INPUT, ghost, TitleLink, DayStrip } from "@/ui/kit";
+import { SleepPage } from "./detail/SleepPage";
+import { WeightPage } from "./detail/WeightPage";
+import { WaterPage } from "./detail/WaterPage";
+import { CoffeePage } from "./detail/CoffeePage";
 
 // ---------------------------------------------------------------------------
 
-export function Today({ onOpen }: { onOpen: (page: string) => void }) {
+type Page = "sleep" | "weight" | "water" | "coffee" | null;
+
+export function Today() {
+  const [page, setPage] = useState<Page>(null);
   const d = today();
   const profile = useLive<Profile>(() => getProfile(), [], DEFAULT_PROFILE);
   const weights = useLive<AnyEvent[]>(() => eventsOfKind("weight"), [], []);
@@ -37,13 +44,19 @@ export function Today({ onOpen }: { onOpen: (page: string) => void }) {
   const w = waterDay(water, profile, stats.latest, lifts.length > 0);
   const cof = coffeeDay(coffee, profile, nowMin());
 
+  const back = () => setPage(null);
+  if (page === "sleep") return <SleepPage onBack={back} />;
+  if (page === "weight") return <WeightPage onBack={back} />;
+  if (page === "water") return <WaterPage onBack={back} />;
+  if (page === "coffee") return <CoffeePage onBack={back} />;
+
   return (
     <>
-      <SleepCard segments={sleep} onOpen={() => onOpen("sleep")} />
-      <WeightCard stats={stats} onOpen={() => onOpen("weight")} />
+      <SleepCard segments={sleep} onOpen={() => setPage("sleep")} />
+      <WeightCard stats={stats} onOpen={() => setPage("weight")} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-        <WaterCard day={w} onOpen={() => onOpen("water")} />
-        <CoffeeCard day={cof} profile={profile} onOpen={() => onOpen("coffee")} />
+        <WaterCard day={w} onOpen={() => setPage("water")} />
+        <CoffeeCard day={cof} profile={profile} onOpen={() => setPage("coffee")} />
       </div>
       <DidCard />
       <NoteCard />
