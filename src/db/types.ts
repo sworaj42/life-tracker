@@ -50,7 +50,9 @@ export interface Payloads {
   lift: { ex: string; kg: number; reps: number; rpe?: number; at: string };
   split: { split: string };
   effort: { rpe: number };
-  dayEnd: Record<string, never>;
+  /** `end` is the moment End workout was tapped. Without it the clock can only guess
+   *  the finish from the last set, which loses the final rest entirely. */
+  dayEnd: { end?: string };
   workout: { type: "strength" | "cardio"; name: string; [k: string]: unknown };
 
   expense: { amount: number; cat: string; label: string; receipt?: string };

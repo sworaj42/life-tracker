@@ -85,6 +85,19 @@ describe("sessionClock — the watch owns workout time", () => {
     expect(sessionClock([...live, ev("dayEnd", {}, t)], t, "19:10").source).toBe("sets");
   });
 
+  it("uses the stamped end when the workout was ended in the app", () => {
+    const c = sessionClock([...sets, ev("dayEnd", { end: "19:45" }, D)], D);
+    expect(c.source).toBe("sets");
+    expect(c.end).toBe("19:45");        // not 19:20, the last set
+    expect(c.mins).toBe(60);            // 18:45 -> 19:45, the final rest included
+  });
+
+  it("falls back to the last set when the end was not stamped", () => {
+    const c = sessionClock([...sets, ev("dayEnd", {}, D)], D);
+    expect(c.end).toBe("19:20");
+    expect(c.mins).toBe(35);
+  });
+
   it("is 'none' with nothing logged", () => {
     expect(sessionClock([], D).source).toBe("none");
   });

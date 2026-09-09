@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { eventsOfKind, logEvent, removeEvent, replaceOnDate, patchEvent } from "@/db/local";
-import { useLive, bump } from "@/db/store";
+import { useLive, bump, useNow } from "@/db/store";
 import type { AnyEvent } from "@/db/types";
 import { today, localTime, shiftDays } from "@/lib/date";
 import {
@@ -48,6 +48,9 @@ const SUB: React.CSSProperties = {
 
 export function Train() {
   const [date, setDate] = useState(today());
+  // The running clock is derived from `now`, so without a tick it freezes at whatever
+  // it read when the screen mounted.
+  useNow(15_000);
   const events = useLive<AnyEvent[]>(
     () => Promise.all([eventsOfKind("lift"), eventsOfKind("split"),
       eventsOfKind("dayEnd"), eventsOfKind("session")]).then((r) => r.flat()),
@@ -121,7 +124,9 @@ function LogCard({
   };
 
   const endDay = async () => {
-    await logEvent("dayEnd", {}, { local_date: date });
+    // Stamp the finish. The clock would otherwise have to guess it from the last set,
+    // which drops the final rest.
+    await logEvent("dayEnd", { end: localTime() }, { local_date: date });
     setActive(null);
     bump();
   };
@@ -489,7 +494,7 @@ function SessionCard({
         );
       })}
 
-      {clock.source === "none" && day.setCount === 0 ? (
+      {clock.source === "none" && day.setCount === 0 && !day.split ? (
         <div style={{ fontSize: 12, color: C.faint }}>Nothing logged for this day.</div>
       ) : (
         <div style={{ ...SUB, padding: "12px 14px 14px" }}>
@@ -500,7 +505,9 @@ function SessionCard({
             <span style={{ fontSize: 15, fontWeight: 600 }}>{title}</span>
             <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
               <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
-                {day.exercises.length} exercise{day.exercises.length === 1 ? "" : "s"}
+                {day.setCount === 0
+                  ? "not started"
+                  : `${day.exercises.length} exercise${day.exercises.length === 1 ? "" : "s"}`}
               </span>
               {day.setCount > 0 && (
                 <button onClick={() => setConfirming(true)} style={{
@@ -538,6 +545,12 @@ function SessionCard({
                   Delete
                 </button>
               </span>
+            </div>
+          )}
+
+          {clock.source === "none" && (
+            <div style={{ fontSize: 12.5, color: C.faint, ...num }}>
+              The clock starts with your first set.
             </div>
           )}
 

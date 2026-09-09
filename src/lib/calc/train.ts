@@ -140,7 +140,11 @@ export function sessionClock(events: AnyEvent[], date: string, nowClock?: string
 
   const start = sets[0].at!;
   const last = sets[sets.length - 1].at!;
-  const ended = events.some((e) => e.kind === "dayEnd" && e.local_date === date);
+  const endEvent = events.find((e) => e.kind === "dayEnd" && e.local_date === date);
+  const ended = endEvent != null;
+  // Ending in the app stamps the real finish. Falling back to the last set loses the
+  // final rest, which on a heavy day is several minutes of the session.
+  const stamped = (endEvent?.payload as { end?: string } | undefined)?.end;
 
   // Still going: today, sets logged, nothing has closed the day.
   if (date === today() && !ended && nowClock) {
@@ -153,11 +157,14 @@ export function sessionClock(events: AnyEvent[], date: string, nowClock?: string
     };
   }
 
+  const finish = stamped ?? last;
   return {
     source: "sets",
-    start, end: last,
-    mins: Math.max(1, dur(start, last)),
+    start, end: finish,
+    mins: Math.max(1, dur(start, finish)),
     kcal: null,
+    // The start is still set-derived — nobody logs their warm-up — so this stays
+    // labelled even when the end was stamped exactly.
     label: "from your sets",
   };
 }
