@@ -218,6 +218,44 @@ describe("resolveBedtime — the day-boundary bug", () => {
   });
 });
 
+describe("bedtime amplification — the deadline moves MORE than bedtime does", () => {
+  // The relationship that is easy to get backwards: pushing bedtime later by D moves
+  // the deadline later by MORE than D, never less. Bedtime moving buys D directly, and
+  // the extra hours also decay the earlier cup further, widening headroom and buying
+  // more again. A shift smaller than D is unreachable.
+  const drinks: Drink[] = [{ mg: 80, time: at("08:00") }];
+  const now = at("09:00");
+  const deadline = (bed: number) =>
+    latestViableTime(totalRemaining(drinks, bed), 80, bed, now, at("08:00"))!;
+
+  it("23:00 -> 01:00 moves bedtime 2h and the deadline 2.56h", () => {
+    const early = resolveBedtime(now, 23, deps).at;
+    const late = resolveBedtime(now, 1, deps).at;
+    expect((late - early) / 3_600_000).toBeCloseTo(2, 5);
+    expect((deadline(late) - deadline(early)) / 3_600_000).toBeCloseTo(2.56, 2);
+    expect(clk(deadline(early))).toBe("15:55");
+    expect(clk(deadline(late))).toBe("18:29");
+  });
+
+  it("holds for every shift, not just this one", () => {
+    const base = resolveBedtime(now, 23, deps).at;
+    for (const hours of [0.5, 1, 2, 3, 4]) {
+      const moved = base + hours * 3_600_000;
+      const bedtimeShift = moved - base;
+      const deadlineShift = deadline(moved) - deadline(base);
+      expect(deadlineShift).toBeGreaterThan(bedtimeShift);
+    }
+  });
+
+  it("less residual at the later bedtime is what buys the extra", () => {
+    const early = resolveBedtime(now, 23, deps).at;
+    const late = resolveBedtime(now, 1, deps).at;
+    expect(totalRemaining(drinks, early)).toBeCloseTo(10.0, 2);
+    expect(totalRemaining(drinks, late)).toBeCloseTo(7.58, 2);
+    expect(totalRemaining(drinks, late)).toBeLessThan(totalRemaining(drinks, early));
+  });
+});
+
 describe("bedtimeTier — derived from the limit, never hardcoded", () => {
   it("tiers at the limit and 1.5x", () => {
     expect(bedtimeTier(40)).toBe("green");

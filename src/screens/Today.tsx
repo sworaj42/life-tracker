@@ -244,12 +244,13 @@ function WaterCard({ day, onOpen }: { day: ReturnType<typeof waterDay>; onOpen: 
 function CoffeeCard({
   drinks, profile, now, onOpen,
 }: { drinks: Drink[]; profile: Profile; now: number; onOpen: () => void }) {
-  // Only half-life and cup size are persisted so far; the rest come from defaults
-  // until the profile migration lands.
+  // focusFloorMg, minGapHours, dailyLimitMg and dayStartHour still come from defaults
+  // until the rest of the caffeine columns land.
   const settings: CaffeineSettings = {
     ...CAFFEINE_DEFAULTS,
     halfLifeHours: profile.caffeine_half_life_h,
     defaultCupMg: profile.cup_mg,
+    bedtimeLimitMg: profile.bedtime_limit_mg,
   };
 
   const [hh, mm] = profile.bedtime.slice(0, 5).split(":").map(Number);
@@ -274,6 +275,13 @@ function CoffeeCard({
     const rows = await eventsOfKindOnDate("coffee", today());
     const last = rows[rows.length - 1];
     if (last) await removeEvent(last.id);
+    bump();
+  };
+
+  const setLimit = async (v: string) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return;
+    await saveProfile({ bedtime_limit_mg: Math.round(n) });
     bump();
   };
 
@@ -354,8 +362,23 @@ function CoffeeCard({
               }}
             />
             <span style={{ fontSize: 13, color: tierColor, fontWeight: 600, ...num }}>
-              {Math.round(atBedtime)} mg
+              {Math.round(atBedtime)}
             </span>
+            <span style={{ fontSize: 11.5, color: C.faint }}>of</span>
+            {/* Editable so the 20-vs-40 comparison is possible at all. It persists,
+                so the setting outlives a reload. */}
+            <input
+              type="number" inputMode="numeric" value={String(profile.bedtime_limit_mg)}
+              onChange={(e) => void setLimit(e.target.value)}
+              aria-label="Bedtime limit in milligrams"
+              style={{
+                width: 44, background: "rgba(255,255,255,.05)",
+                border: "1px solid rgba(255,255,255,.12)", borderRadius: 8,
+                color: C.soft, fontSize: 11.5, padding: "3px 4px", textAlign: "center",
+                outline: "none", ...num,
+              }}
+            />
+            <span style={{ fontSize: 11.5, color: C.faint }}>mg</span>
           </span>
         </div>
 
