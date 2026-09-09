@@ -27,6 +27,7 @@ import {
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
 import { CARD, INPUT, DayStrip } from "@/ui/kit";
+import { BarChart } from "@/ui/charts";
 
 const ACCENT = "#6FC29A";
 const ON_ACCENT = "#0F1A14";
@@ -251,8 +252,10 @@ function WeeklyBudget({ profile, b }: { profile: Profile; b: ReturnType<typeof b
 // ---------------------------------------------------------------------------
 
 function CategoryPicker({
-  kind, value, onPick,
-}: { kind: "expense" | "income"; value: string; onPick: (c: string) => void }) {
+  kind, value, onPick, label = "Category",
+}: {
+  kind: "expense" | "income"; value: string; onPick: (c: string) => void; label?: string;
+}) {
   const saved = useLive<Category[]>(() => getCategories(kind), [kind], []);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
@@ -271,7 +274,7 @@ function CategoryPicker({
 
   return (
     <>
-      <div style={{ fontSize: 12, color: C.soft, margin: "10px 0 7px" }}>Category</div>
+      <div style={{ fontSize: 12, color: C.soft, margin: "10px 0 7px" }}>{label}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {names.map((n) => {
           const on = value === n;
@@ -374,7 +377,7 @@ function AddExpense() {
   return (
     <div style={SUB}>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Add expense</div>
-      <div style={{ display: "grid", gridTemplateColumns: "110px minmax(0,1fr)", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
         <input value={amount} onChange={(e) => setAmount(e.target.value)}
           inputMode="numeric" placeholder="Rs"
           style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
@@ -385,7 +388,7 @@ function AddExpense() {
       <input type="date" value={date} max={today()}
         onChange={(e) => e.target.value && setDate(e.target.value)}
         aria-label="Date"
-        style={{ ...INPUT, marginTop: 8, colorScheme: "dark", width: 170 }} />
+        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
 
       <CategoryPicker kind="expense" value={cat} onPick={setCat} />
 
@@ -480,13 +483,11 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
   return (
     <div style={SUB}>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find a transaction</div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
-        <input value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Description or category" style={INPUT} />
-        <input type="date" value={date} max={today()}
-          onChange={(e) => setDate(e.target.value)} aria-label="Date"
-          style={{ ...INPUT, colorScheme: "dark", width: 140 }} />
-      </div>
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        placeholder="Description or category" style={INPUT} />
+      <input type="date" value={date} max={today()}
+        onChange={(e) => setDate(e.target.value)} aria-label="Pick a date"
+        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
       {date && (
         <button onClick={() => setDate("")} style={{
           border: "none", background: "transparent", color: C.soft, fontSize: 11.5,
@@ -509,41 +510,13 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
 
 // ---------------------------------------------------------------------------
 
-/** Bars with a dashed average, drawn as inline SVG — no chart library. */
-function BarChart({
-  data, average, color,
-}: { data: { date: string; amount: number }[]; average: number; color: string }) {
-  const hi = Math.max(1, ...data.map((d) => d.amount));
-  const slot = 300 / Math.max(1, data.length);
-  const w = slot * 0.56;
-  const avgY = 96 - (average / hi) * 90;
-
-  return (
-    <div>
-      <svg viewBox="0 0 300 100" preserveAspectRatio="none"
-        style={{ width: "100%", height: 110, display: "block" }}>
-        {data.map((d, i) => {
-          const h = (d.amount / hi) * 90;
-          return (
-            <rect key={d.date} rx="1.5"
-              x={(i * slot + (slot - w) / 2).toFixed(1)} width={w.toFixed(1)}
-              y={(96 - h).toFixed(1)} height={Math.max(h, d.amount ? 1.5 : 0).toFixed(1)}
-              fill={color} opacity={d.amount ? 1 : 0.25} />
-          );
-        })}
-        {average > 0 && (
-          <line x1="0" x2="300" y1={avgY.toFixed(1)} y2={avgY.toFixed(1)}
-            stroke={C.soft} strokeWidth="1" strokeDasharray="3 3"
-            vectorEffect="non-scaling-stroke" />
-        )}
-      </svg>
-      <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
-        dashed line is the average
-      </div>
-    </div>
-  );
-}
-
+/**
+ * Spending.
+ *
+ * A bare header row and then five separate cards — averages, top 3, the daily bars and
+ * the category split each get their own. Stacking them inside one card, as I first did,
+ * loses the separation the design uses to say these are different questions.
+ */
 function Spending({ txns }: { txns: Txn[] }) {
   const [scope, setScope] = useState<"week" | "month">("week");
   const t = today();
@@ -557,71 +530,83 @@ function Spending({ txns }: { txns: Txn[] }) {
   const top = topSpends(txns, from, t);
 
   return (
-    <div style={SUB}>
+    <>
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        margin: "4px 2px 10px",
       }}>
         <span style={{ fontSize: 15, fontWeight: 600 }}>Spending</span>
         <div style={{
           display: "flex", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16,
           padding: 2, background: "rgba(255,255,255,.06)",
         }}>
-          {(["week", "month"] as const).map((s) => (
-            <button key={s} onClick={() => setScope(s)} style={{
+          {(["week", "month"] as const).map((x) => (
+            <button key={x} onClick={() => setScope(x)} style={{
               border: "none", borderRadius: 13, cursor: "pointer",
-              background: scope === s ? ACCENT : "transparent",
-              color: scope === s ? ON_ACCENT : C.soft,
+              background: scope === x ? ACCENT : "transparent",
+              color: scope === x ? ON_ACCENT : C.soft,
               fontWeight: 500, fontSize: 12.5, padding: "6px 12px", minHeight: 30,
               textTransform: "capitalize",
             }}>
-              {s}
+              {x}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Labelled "Last 7/30 days", never "this week" — only the budget uses a
-          calendar week, and two windows must never share a label. */}
-      <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>
-        Last {days} days
-      </div>
-
+      {/* "Last 7/30 days", never "this week" — only the budget uses a calendar week,
+          and two windows must never share a label. */}
       <div style={{
-        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14,
+        display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
+        gap: 10, marginBottom: 10,
       }}>
-        <div>
-          <div style={{ fontSize: 12, color: C.soft }}>Spent, daily average</div>
+        <div style={{ ...SUB, marginBottom: 0 }}>
+          <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>Spent, daily average</div>
           <div style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.1, ...num }}>{rs(avg)}</div>
+          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3 }}>Last {days} days</div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, color: C.soft }}>Total</div>
+        <div style={{ ...SUB, marginBottom: 0 }}>
+          <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>Total</div>
           <div style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.1, ...num }}>{rs(total)}</div>
+          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3, ...num }}>
+            {txns.filter((x) => x.kind === "expense" && x.date >= from && x.date <= t).length} entries
+          </div>
         </div>
       </div>
 
       {top.length > 0 && (
-        <>
+        <div style={SUB}>
           <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>Top 3 spends</div>
           {top.map((x) => (
             <div key={x.id} style={{
-              display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0",
+              display: "flex", justifyContent: "space-between", gap: 8, padding: "7px 0",
               borderTop: "1px solid rgba(255,255,255,.08)", ...num,
             }}>
               <span style={{ fontSize: 12.5, color: C.ink, flex: 1, minWidth: 0 }}>
-                {x.label} <span style={{ color: C.faint }}>· {x.date}</span>
+                {x.label} <span style={{ color: C.faint }}>· {x.cat}</span>
               </span>
               <span style={{ fontSize: 12.5, fontWeight: 600 }}>{rs(x.amount)}</span>
             </div>
           ))}
-        </>
+        </div>
       )}
 
-      <div style={{ fontSize: 12, color: C.soft, margin: "14px 0 6px" }}>Spent, each day</div>
-      <BarChart data={series} average={avg} color={ACCENT} />
+      <div style={SUB}>
+        <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>Spent, each day</div>
+        <BarChart
+          points={series.map((d) => ({ label: d.date.slice(5), value: d.amount }))}
+          color={ACCENT}
+          average={avg}
+          format={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(Math.round(v)))}
+        />
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
+          dashed line is the average
+        </div>
+      </div>
 
       {cats.length > 0 && (
-        <>
-          <div style={{ fontSize: 12, color: C.soft, margin: "14px 0 8px" }}>By category</div>
+        <div style={SUB}>
+          <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>By category</div>
           {cats.map((c) => (
             <div key={c.cat} style={{ marginBottom: 8 }}>
               <div style={{
@@ -634,13 +619,15 @@ function Spending({ txns }: { txns: Txn[] }) {
               <div style={{
                 height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden",
               }}>
-                <div style={{ height: "100%", width: `${c.pct}%`, background: ACCENT, borderRadius: 3 }} />
+                <div style={{
+                  height: "100%", width: `${c.pct}%`, background: ACCENT, borderRadius: 3,
+                }} />
               </div>
             </div>
           ))}
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -697,19 +684,20 @@ function BalancePage({
 
       <section style={CARD}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Add to balance</div>
-        <div style={{ display: "grid", gridTemplateColumns: "110px minmax(0,1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
           <input value={amount} onChange={(e) => setAmount(e.target.value)}
             inputMode="numeric" placeholder="Rs"
             style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
           <input value={label} onChange={(e) => setLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void save()}
-            placeholder="What was it" style={INPUT} />
+            placeholder="What was it for" style={INPUT} />
         </div>
         <input type="date" value={date} max={today()}
           onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Date"
-          style={{ ...INPUT, marginTop: 8, colorScheme: "dark", width: 150 }} />
+          style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
 
-        <CategoryPicker kind="income" value={cat} onPick={setCat} />
+        <CategoryPicker kind="income" value={cat} onPick={setCat} label="Source" />
+        <ReceiptButtons />
 
         {cat.trim().toLowerCase() === "borrowed" && (
           <div style={{ fontSize: 11.5, color: C.faint, marginTop: 10, lineHeight: 1.5 }}>
@@ -725,15 +713,17 @@ function BalancePage({
         </button>
       </section>
 
-      {recent.length > 0 && (
-        <section style={CARD}>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Recently added</div>
-          {recent.map((t) => (
+      <section style={CARD}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Recently added</div>
+        {recent.length === 0
+          ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 6 }}>Nothing added yet.</div>
+          : recent.map((t) => (
             <TxnRow key={t.id} t={t}
               onDelete={async () => { await removeEvent(t.id); bump(); }} />
           ))}
-        </section>
-      )}
+      </section>
+
+      <FindEntry txns={txns} />
 
       <section style={CARD}>
         <div style={{
@@ -776,3 +766,38 @@ function BalancePage({
 }
 
 export { patchEvent };
+
+/** Income search. The expense side has the same thing; both read the same rows. */
+function FindEntry({ txns }: { txns: Txn[] }) {
+  const [query, setQuery] = useState("");
+  const [date, setDate] = useState("");
+  const income = txns.filter((t) => t.kind === "income");
+  const results = query || date ? search(income, query, date || undefined).slice(0, 20) : [];
+
+  return (
+    <section style={CARD}>
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find an entry</div>
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        placeholder="Description or source" style={INPUT} />
+      <input type="date" value={date} max={today()}
+        onChange={(e) => setDate(e.target.value)} aria-label="Pick a date"
+        style={{ ...INPUT, marginTop: 8, colorScheme: "dark" }} />
+      {date && (
+        <button onClick={() => setDate("")} style={{
+          border: "none", background: "transparent", color: C.soft, fontSize: 11.5,
+          cursor: "pointer", padding: "8px 0 0",
+        }}>
+          Clear date
+        </button>
+      )}
+      {(query || date) && (
+        results.length === 0
+          ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 10 }}>Nothing found.</div>
+          : results.map((t) => (
+            <TxnRow key={t.id} t={t}
+              onDelete={async () => { await removeEvent(t.id); bump(); }} />
+          ))
+      )}
+    </section>
+  );
+}
