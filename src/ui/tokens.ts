@@ -8,7 +8,9 @@
  */
 
 export const C = {
-  bg: "#0C0E12",
+  // The APP SURFACE, not `body`. The prototype's body is #0C0E12, but that sits behind
+  // the phone frame; the screen itself is #121829 with three radial tints over it.
+  bg: "#121829",
 
   ink: "#E8ECF5",
   soft: "#97A1B8",

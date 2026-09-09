@@ -254,65 +254,122 @@ function CategoryPicker({
   kind, value, onPick,
 }: { kind: "expense" | "income"; value: string; onPick: (c: string) => void }) {
   const saved = useLive<Category[]>(() => getCategories(kind), [kind], []);
+  const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
   const defaults = kind === "expense" ? DEFAULT_EXPENSE_CATS : DEFAULT_INCOME_CATS;
   const names = saved.length ? saved.map((c) => c.name) : defaults;
 
   const add = async () => {
-    if (!adding.trim()) return;
+    if (!adding.trim()) { setEditing(false); return; }
     // Case-insensitive, so "Food" and "food" cannot both exist (AUDIT C15).
     const c = await addCategory(kind, adding);
     onPick(c.name);
     setAdding("");
+    setEditing(false);
     bump();
   };
 
   return (
     <>
       <div style={{ fontSize: 12, color: C.soft, margin: "10px 0 7px" }}>Category</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-        {names.map((n) => (
-          <button key={n} onClick={() => onPick(n)} style={{
-            border: "1px solid rgba(255,255,255,.12)", borderRadius: 10,
-            background: value === n ? ACCENT : "rgba(255,255,255,.05)",
-            color: value === n ? ON_ACCENT : C.soft,
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {names.map((n) => {
+          const on = value === n;
+          return (
+            <button key={n} onClick={() => onPick(n)} style={{
+              border: `1px solid ${on ? ACCENT : "rgba(255,255,255,.1)"}`,
+              borderRadius: 10,
+              background: on ? ACCENT : "rgba(255,255,255,.05)",
+              color: on ? ON_ACCENT : C.ink,
+              fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
+            }}>
+              {n}
+            </button>
+          );
+        })}
+        {/* A dashed chip, not a permanently open field — it is an escape hatch, and
+            leaving an input on screen makes it look like a required step. */}
+        {editing ? (
+          <input
+            value={adding} autoFocus
+            onChange={(e) => setAdding(e.target.value)}
+            onBlur={() => void add()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") { setAdding(""); setEditing(false); }
+            }}
+            placeholder="Name, Enter"
+            style={{
+              border: "1px dashed rgba(255,255,255,.2)", borderRadius: 10,
+              background: "rgba(255,255,255,.05)", color: C.ink, fontSize: 12.5,
+              padding: "7px 11px", minHeight: 34, outline: "none", width: 130,
+            }} />
+        ) : (
+          <button onClick={() => setEditing(true)} style={{
+            border: "1px dashed rgba(255,255,255,.2)", borderRadius: 10,
+            background: "transparent", color: C.faint,
             fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
           }}>
-            {n}
+            + new
           </button>
-        ))}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
-        <input value={adding} onChange={(e) => setAdding(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void add()}
-          placeholder="Name, Enter" style={{ ...INPUT, fontSize: 12.5 }} />
-        <button onClick={() => void add()} style={{
-          border: "1px solid rgba(255,255,255,.12)", borderRadius: 10,
-          background: "rgba(255,255,255,.07)", color: C.soft, padding: "0 14px",
-          cursor: "pointer", fontSize: 12.5,
-        }}>
-          + new
-        </button>
+        )}
       </div>
     </>
+  );
+}
+
+/** Dashed, because neither does anything yet — receipts are a later phase. */
+function ReceiptButtons() {
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12,
+    }}>
+      {[
+        { label: "Scan receipt", d: "M4 8V5.5A1.5 1.5 0 015.5 4H8 M16 4h2.5A1.5 1.5 0 0120 5.5V8 M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16 M8 20H5.5A1.5 1.5 0 014 18.5V16 M7 12h10" },
+        { label: "Choose file", d: "M13 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V9z M13 3v6h6" },
+      ].map((b) => (
+        <button key={b.label} title="Receipts arrive in a later phase" disabled style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          height: 42, borderRadius: 11, border: "1px dashed rgba(255,255,255,.2)",
+          background: "rgba(255,255,255,.04)", color: C.faint, fontSize: 12.5,
+          cursor: "not-allowed",
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d={b.d} />
+          </svg>
+          {b.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
 function AddExpense() {
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
-  const [cat, setCat] = useState(DEFAULT_EXPENSE_CATS[0]);
+  // Nothing preselected: the design shows every chip in its resting state, and
+  // defaulting to Food quietly mislabels anything logged in a hurry.
+  const [cat, setCat] = useState("");
   const [date, setDate] = useState(today());
 
+  const n = Number(amount);
+  const ready = Number.isFinite(n) && n > 0;
+
   const save = async () => {
-    const n = Number(amount);
-    if (!Number.isFinite(n) || n <= 0) return;
-    await addCategory("expense", cat);
-    await logEvent("expense", { amount: n, cat, label: label.trim() || cat }, { local_date: date });
+    if (!ready) return;
+    const c = cat || "Other";
+    await addCategory("expense", c);
+    await logEvent("expense", { amount: n, cat: c, label: label.trim() || c },
+      { local_date: date });
     setAmount("");
     setLabel("");
     bump();
   };
+
+  const dayWord = date === today()
+    ? "today"
+    : date === shiftDays(-1) ? "yesterday" : date.slice(5);
 
   return (
     <div style={SUB}>
@@ -328,7 +385,7 @@ function AddExpense() {
       <input type="date" value={date} max={today()}
         onChange={(e) => e.target.value && setDate(e.target.value)}
         aria-label="Date"
-        style={{ ...INPUT, marginTop: 8, colorScheme: "dark", width: 150 }} />
+        style={{ ...INPUT, marginTop: 8, colorScheme: "dark", width: 170 }} />
 
       <CategoryPicker kind="expense" value={cat} onPick={setCat} />
 
@@ -339,11 +396,19 @@ function AddExpense() {
         </div>
       )}
 
-      <button onClick={() => void save()} style={{
-        width: "100%", height: 44, marginTop: 12, borderRadius: 12, border: "none",
-        background: ACCENT, color: ON_ACCENT, fontSize: 14, fontWeight: 600, cursor: "pointer",
+      <ReceiptButtons />
+
+      {/* The label states exactly what is about to be written, so the last check before
+          committing is reading it back rather than trusting the fields. */}
+      <button onClick={() => void save()} disabled={!ready} style={{
+        width: "100%", height: 42, marginTop: 12, borderRadius: 12, border: "none",
+        background: ready ? ACCENT : "rgba(111,194,154,.28)",
+        color: ready ? ON_ACCENT : "rgba(15,26,20,.65)",
+        fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "not-allowed", ...num,
       }}>
-        Add
+        {ready
+          ? `Add ${rs(n)} · ${cat || "Other"} · ${dayWord}`
+          : "Add expense"}
       </button>
     </div>
   );

@@ -8,6 +8,7 @@ import { Today } from "@/screens/Today";
 import { Fuel } from "@/screens/Fuel";
 import { Train } from "@/screens/Train";
 import { Funds } from "@/screens/Funds";
+import { Quests } from "@/screens/Quests";
 import { QuickLog } from "@/screens/QuickLog";
 import { Login } from "@/screens/Login";
 import { Settings } from "@/screens/Settings";
@@ -44,13 +45,18 @@ export default function App() {
   return (
     <div style={{
       minHeight: "100dvh",
-      // Two soft radial tints over the ground, as in the design.
-      background:
-        `radial-gradient(90% 50% at 10% 0%, rgba(143,182,232,.07), transparent 60%),` +
-        `radial-gradient(80% 40% at 90% 12%, rgba(182,166,232,.06), transparent 60%), ${C.bg}`,
+      // Ported verbatim. Three tints, not two, and strong enough to see — indigo
+      // top-left, cyan mid-right, purple bottom. They are also what the frosted cards
+      // have to blur; over a near-black ground the effect disappears entirely.
+      backgroundColor: C.bg,
+      backgroundImage:
+        "radial-gradient(55% 35% at 15% 5%, rgba(88,112,230,.38), transparent 70%)," +
+        "radial-gradient(45% 30% at 95% 45%, rgba(60,170,200,.22), transparent 70%)," +
+        "radial-gradient(50% 30% at 40% 100%, rgba(140,90,200,.22), transparent 70%)",
+      backgroundAttachment: "local",
       paddingTop: "env(safe-area-inset-top)",
     }}>
-      <div style={{ maxWidth: 520, margin: "0 auto", padding: "14px 14px 128px" }}>
+      <div style={{ maxWidth: 520, margin: "0 auto", padding: "14px 16px 128px" }}>
         {!settings && <header style={{
           display: "flex", justifyContent: "space-between", alignItems: "baseline",
           gap: 12, margin: "0 2px 18px",
@@ -101,7 +107,7 @@ export default function App() {
         ) : tab === "money" ? (
           <Funds />
         ) : (
-          <Placeholder tab={tab} />
+          <Quests />
         )}
       </div>
 
@@ -173,19 +179,6 @@ function SyncPill({ sync }: { sync: SyncState | null }) {
     }}>
       {label}
     </span>
-  );
-}
-
-function Placeholder({ tab }: { tab: TabKey }) {
-  const label = TABS.find((t) => t.key === tab)!.label;
-  return (
-    <div style={{
-      textAlign: "center", padding: "60px 20px", color: C.faint, fontSize: 13, lineHeight: 1.6,
-    }}>
-      <div style={{ fontSize: 15, color: C.soft, marginBottom: 6 }}>{label} is next.</div>
-      Everything for this tab already logs through the <strong style={{ color: C.ink }}>+</strong>{" "}
-      button and is being stored, so nothing is lost while the screen gets built.
-    </div>
   );
 }
 

@@ -67,3 +67,19 @@ export function writing<A extends unknown[], R>(
 }
 
 export const currentVersion = () => version;
+
+/**
+ * A clock that ticks, so anything derived from `now` stays true without a write.
+ *
+ * A running session timer would otherwise freeze at whatever it read when the screen
+ * mounted. Re-renders only — `useLive` queries do not re-run, since their deps are
+ * unchanged.
+ */
+export function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
