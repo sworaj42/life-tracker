@@ -20,6 +20,7 @@ import {
   trainDay, sessionClock, suggestions, lastTime, prefill, summarise, rpeHue, RPE_WORDS,
   type SetRow, type TrainDay,
 } from "@/lib/calc/train";
+import { uuid } from "@/db/local";
 import { C, num } from "@/ui/tokens";
 import { INPUT, DayStrip } from "@/ui/kit";
 
@@ -48,6 +49,9 @@ const SUB: React.CSSProperties = {
 
 export function Train() {
   const [date, setDate] = useState(today());
+  // Raised here so a set tapped in the session list below can be pulled back into the
+  // log card above. Previously that tap did nothing at all.
+  const [editRequest, setEditRequest] = useState<SetRow | null>(null);
   // The running clock is derived from `now`, so without a tick it freezes at whatever
   // it read when the screen mounted.
   useNow(15_000);
@@ -62,8 +66,10 @@ export function Train() {
 
   return (
     <>
-      <LogCard events={events} day={day} date={date} />
-      <SessionCard events={events} day={day} date={date} setDate={setDate} clock={clock} />
+      <LogCard events={events} day={day} date={date}
+        editRequest={editRequest} onEditHandled={() => setEditRequest(null)} />
+      <SessionCard events={events} day={day} date={date} setDate={setDate} clock={clock}
+        onEditSet={setEditRequest} />
     </>
   );
 }
@@ -71,11 +77,20 @@ export function Train() {
 // ---------------------------------------------------------------------------
 
 function LogCard({
-  events, day, date,
-}: { events: AnyEvent[]; day: TrainDay; date: string }) {
+  events, day, date, editRequest, onEditHandled,
+}: {
+  events: AnyEvent[]; day: TrainDay; date: string;
+  editRequest: SetRow | null; onEditHandled: () => void;
+}) {
   const [editingSplit, setEditingSplit] = useState(false);
   const [splitDraft, setSplitDraft] = useState("");
   const [active, setActive] = useState<string | null>(null);
+  // A superset is a second exercise alternated with the first. Both stay open and the
+  // sets carry a shared id, so the session reads back as one block rather than two
+  // exercises that happen to be interleaved.
+  const [partner, setPartner] = useState<string | null>(null);
+  const [ssId, setSsId] = useState<string | null>(null);
+  const [addingPartner, setAddingPartner] = useState("");
   const [name, setName] = useState("");
   const [kg, setKg] = useState("");
   const [reps, setReps] = useState("");
@@ -83,6 +98,17 @@ function LogCard({
   // AUDIT C11: set editing was delete-only, so a wrong weight meant deleting the chip
   // and re-adding it. Tapping a chip now loads it here to be corrected.
   const [editingSet, setEditingSet] = useState<SetRow | null>(null);
+
+  // A set tapped in the session list opens here, with its exercise made active.
+  useEffect(() => {
+    if (!editRequest) return;
+    setActive(editRequest.ex);
+    setEditingSet(editRequest);
+    setKg(String(editRequest.kg));
+    setReps(String(editRequest.reps));
+    setRpe(editRequest.rpe ?? 0);
+    onEditHandled();
+  }, [editRequest, onEditHandled]);
 
   const showSplitInput = editingSplit || !day.split;
 
@@ -105,13 +131,35 @@ function LogCard({
     setReps(pre.reps);
     setRpe(0);
     setEditingSet(null);
+    setPartner(null);
+    setSsId(null);
   };
 
-  const addSet = async () => {
+  /** Switch which half of a superset the next set belongs to. */
+  const swapTo = (ex: string) => {
+    const pre = prefill(events, ex, date);
+    setActive(ex);
+    setKg(pre.kg);
+    setReps(pre.reps);
+    setRpe(0);
+    setEditingSet(null);
+  };
+
+  const pairWith = (ex: string) => {
+    const n = ex.trim();
+    if (!n || !active) return;
+    setPartner(n);
+    setSsId(uuid());
+    setAddingPartner("");
+  };
+
+  const addSet = async (drop = false) => {
     if (!active || !kg || !reps) return;
     const payload = {
       ex: active, kg: parseFloat(kg), reps: parseInt(reps, 10),
       rpe: rpe || undefined, at: localTime(),
+      ...(drop ? { drop: true } : {}),
+      ...(ssId ? { ss: ssId } : {}),
     };
     if (editingSet) {
       await patchEvent(editingSet.id, (p) => ({ ...p, ...payload, at: editingSet.at ?? payload.at }));
@@ -119,7 +167,11 @@ function LogCard({
     } else {
       await logEvent("lift", payload, { local_date: date });
     }
-    // Everything stays in place, so a straight set is one more tap.
+    // Everything stays in place, so a straight set is one more tap. In a superset the
+    // next set belongs to the other exercise, so it swaps for you.
+    if (!drop && partner && !editingSet) {
+      swapTo(active === partner ? (activeBase ?? active) : partner);
+    }
     bump();
   };
 
@@ -141,6 +193,10 @@ function LogCard({
   const activeSets = active
     ? day.sets.filter((s) => s.ex.trim().toLowerCase() === active.trim().toLowerCase())
     : [];
+  // The first half of the pair, so swapping back knows where to go.
+  const activeBase = partner
+    ? day.sets.find((s) => s.ss === ssId && s.ex !== partner)?.ex ?? null
+    : null;
   const suggested = suggestions(events, day.split, date);
   const prev = active ? lastTime(events, active, date) : null;
 
@@ -210,10 +266,24 @@ function LogCard({
 
           {!active ? (
             <div style={SUB}>
-              <div style={{ fontSize: 12, color: C.soft, marginBottom: 7 }}>Start an exercise</div>
-              {suggested.length > 0 && (
+              <div style={{
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                gap: 8, marginBottom: 7,
+              }}>
+                <span style={{ fontSize: 12, color: C.soft }}>Start an exercise</span>
+                {/* Saying where the chips came from matters: "your last Push day" is a
+                    reason to trust them, "recent" is a reason not to. */}
+                {suggested.names.length > 0 && (
+                  <span style={{ fontSize: 11, color: C.faint }}>
+                    {suggested.from === "day" && day.split
+                      ? `from your last ${day.split} day`
+                      : "recent"}
+                  </span>
+                )}
+              </div>
+              {suggested.names.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 9 }}>
-                  {suggested.map((s) => (
+                  {suggested.names.map((s) => (
                     <button key={s} onClick={() => start(s)} style={{
                       border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.05)",
                       borderRadius: 9, padding: "6px 10px", fontSize: 12.5, color: C.soft,
@@ -243,9 +313,24 @@ function LogCard({
             }}>
               <div style={{
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                gap: 10, marginBottom: 10,
+                gap: 10, marginBottom: 10, flexWrap: "wrap",
               }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{active}</span>
+                {partner && activeBase ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {[activeBase, partner].map((ex) => (
+                      <button key={ex} onClick={() => swapTo(ex)} style={{
+                        border: `1px solid ${ex === active ? ACCENT : "rgba(255,255,255,.14)"}`,
+                        background: ex === active ? "rgba(224,121,111,.18)" : "transparent",
+                        borderRadius: 9, padding: "4px 9px", fontSize: 13, fontWeight: 600,
+                        color: ex === active ? C.ink : C.soft, cursor: "pointer",
+                      }}>
+                        {ex}
+                      </button>
+                    ))}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{active}</span>
+                )}
                 <span style={{ fontSize: 11.5, color: ACCENT, ...num }}>
                   {activeSets.length} set{activeSets.length === 1 ? "" : "s"}
                 </span>
@@ -297,16 +382,18 @@ function LogCard({
                   {RPE_WORDS[rpe]}
                 </span>
               </div>
+              {/* Each step keeps its own colour, so the bar reads as a ramp — green
+                  through sand and amber to red — rather than a single block that only
+                  tells you how far along it is. */}
               <div style={{ display: "flex", gap: 3, marginBottom: 12 }}>
                 {Array.from({ length: 10 }, (_, i) => i + 1).map((i) => (
                   <button key={i} aria-label={`Intensity ${i} of 10`}
                     onClick={() => setRpe(i === rpe ? 0 : i)}
                     style={{
-                      flex: 1, height: 24, borderRadius: 6, border: "none", cursor: "pointer",
-                      padding: 0,
-                      background: i <= rpe
-                        ? (rpe >= 9 ? "#D2685E" : rpe >= 7 ? ACCENT : "rgba(224,121,111,.55)")
-                        : "rgba(255,255,255,.08)",
+                      flex: 1, height: 24, borderRadius: 6, cursor: "pointer", padding: 0,
+                      border: i === rpe ? `1px solid ${rpeHue(i)}` : "none",
+                      background: i <= rpe ? rpeHue(i) : "rgba(255,255,255,.08)",
+                      opacity: i <= rpe ? 1 : 1,
                     }} />
                 ))}
               </div>
@@ -318,14 +405,44 @@ function LogCard({
                 }}>
                   {editingSet ? "Save set" : "Add set"}
                 </button>
-                <button onClick={() => { setActive(null); setEditingSet(null); }} style={{
-                  height: 42, padding: "0 16px", borderRadius: 12,
+                {/* A drop is the same exercise again, lighter and without rest. It does
+                    not swap you to the other half of a superset. */}
+                <button onClick={() => void addSet(true)} disabled={!!editingSet} style={{
+                  height: 42, padding: "0 14px", borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+                  color: editingSet ? C.faint : C.food, fontSize: 13.5,
+                  cursor: editingSet ? "not-allowed" : "pointer",
+                }}>
+                  Drop
+                </button>
+              </div>
+
+              {!partner && (
+                <div style={{
+                  display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, marginTop: 8,
+                }}>
+                  <input value={addingPartner} onChange={(e) => setAddingPartner(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && pairWith(addingPartner)}
+                    placeholder="Superset with…" style={{ ...INPUT, fontSize: 13 }} />
+                  <button onClick={() => pairWith(addingPartner)} style={{
+                    height: 42, padding: "0 14px", borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+                    color: C.soft, fontSize: 13, cursor: "pointer",
+                  }}>
+                    Pair
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={() => { setActive(null); setEditingSet(null); setPartner(null); setSsId(null); }}
+                style={{
+                  width: "100%", height: 40, marginTop: 8, borderRadius: 12,
                   border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
                   color: C.soft, fontSize: 13.5, cursor: "pointer",
                 }}>
-                  End {active.length > 12 ? "exercise" : active.toLowerCase()}
-                </button>
-              </div>
+                {partner ? "End superset" : `End ${active.length > 12 ? "exercise" : active.toLowerCase()}`}
+              </button>
 
               {prev && (
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 10, ...num }}>
@@ -389,6 +506,10 @@ function SetChip({
       }}>
         <span style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+            {/* A drop and a superset leg are not ordinary sets, and reading the session
+                back later without knowing which is which loses the whole point. */}
+            {set.drop && <span style={{ color: C.food, fontSize: 10, fontWeight: 600 }}>↓</span>}
+            {set.ss && <span style={{ color: C.skill, fontSize: 10, fontWeight: 600 }}>⇄</span>}
             <span style={{ fontWeight: 600 }}>{set.kg}</span>
             <span style={{ color: C.soft }}>kg × {set.reps}</span>
             {set.rpe && <span style={{ color: hue, fontSize: 11, paddingLeft: 2 }}>@{set.rpe}</span>}
@@ -423,10 +544,10 @@ function SetChip({
 // ---------------------------------------------------------------------------
 
 function SessionCard({
-  events, day, date, setDate, clock,
+  events, day, date, setDate, clock, onEditSet,
 }: {
   events: AnyEvent[]; day: TrainDay; date: string; setDate: (d: string) => void;
-  clock: ReturnType<typeof sessionClock>;
+  clock: ReturnType<typeof sessionClock>; onEditSet: (s: SetRow) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
 
@@ -560,29 +681,51 @@ function SessionCard({
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
                 gap: 12, flexWrap: "wrap",
               }}>
-                <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{
-                    fontSize: 22, fontWeight: 600, lineHeight: 1,
-                    letterSpacing: "-0.01em", ...num,
-                  }}>
-                    {clock.source === "running"
-                      ? `${clock.start} · running`
-                      : `${clock.start}–${clock.end}`}
+                {clock.source === "running" ? (
+                  // While it runs, the DURATION is the number you want, not the start
+                  // time. The dot pulses so a glance tells you it is still counting.
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%", background: ACCENT,
+                      animation: "livePulse 1.6s ease-in-out infinite", flex: "none",
+                    }} />
+                    <span style={{
+                      fontSize: 22, fontWeight: 600, lineHeight: 1,
+                      letterSpacing: "-0.01em", ...num,
+                    }}>
+                      {Math.floor((clock.mins ?? 0) / 60) > 0
+                        ? `${Math.floor((clock.mins ?? 0) / 60)}h ${String((clock.mins ?? 0) % 60).padStart(2, "0")}m`
+                        : `${clock.mins} min`}
+                    </span>
+                    <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
+                      since {clock.start}
+                    </span>
                   </span>
-                  {/* Always labelled: a set-derived clock misses the warm-up and the
-                      final rest, so it is not the same measurement as the watch's. */}
-                  <span style={{
-                    fontSize: 11,
-                    color: clock.source === "watch" ? C.faint : C.food,
-                  }}>
-                    {clock.label}
+                ) : (
+                  <span style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: 22, fontWeight: 600, lineHeight: 1,
+                      letterSpacing: "-0.01em", ...num,
+                    }}>
+                      {clock.start}–{clock.end}
+                    </span>
+                    {/* Labelled because a set-derived clock misses the warm-up, so it is
+                        not the same measurement as the watch's. */}
+                    <span style={{
+                      fontSize: 11,
+                      color: clock.source === "watch" ? C.faint : C.food,
+                    }}>
+                      {clock.label}
+                    </span>
                   </span>
-                </span>
+                )}
                 <span style={{ display: "flex", alignItems: "baseline", gap: 14, ...num }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>
-                    {clock.mins}
-                    <span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> min</span>
-                  </span>
+                  {clock.source !== "running" && (
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>
+                      {clock.mins}
+                      <span style={{ fontSize: 11, fontWeight: 400, color: C.soft }}> min</span>
+                    </span>
+                  )}
                   {clock.kcal != null && (
                     <span style={{ fontSize: 15, fontWeight: 600, color: ACCENT }}>
                       {clock.kcal}
@@ -625,7 +768,7 @@ function SessionCard({
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {x.sets.map((sx) => (
                 <SetChip key={sx.id} set={sx} editing={false}
-                  onEdit={() => {}}
+                  onEdit={() => onEditSet(sx)}
                   onRemove={async () => { await removeEvent(sx.id); bump(); }} />
               ))}
             </div>

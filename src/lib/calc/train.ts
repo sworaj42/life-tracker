@@ -22,6 +22,10 @@ export interface SetRow {
   reps: number;
   rpe?: number;
   at?: string;
+  /** Taken straight off the previous set, lighter and without rest. */
+  drop?: boolean;
+  /** Shared id for sets alternated as a superset. */
+  ss?: string;
 }
 
 export interface Exercise {
@@ -185,18 +189,39 @@ function dur(a: string, b: string): number {
  * Bench press appears on push day and not on pull day. With no day type set, this falls
  * back to every recent lift rather than showing nothing.
  */
+/**
+ * "Shoulder day", "shoulders" and "Shoulder" are the same day. Typing the split by hand
+ * means it will not be spelled identically every week, and an exact match would quietly
+ * show nothing on the week you pluralised it.
+ */
+export function normaliseSplit(s: string): string {
+  const base = s.trim().toLowerCase().replace(/\s*day\s*$/, "").trim();
+  // "pushes" -> "push", "legs" -> "leg". Both sides are normalised the same way, so
+  // even a wrong stem still matches itself; the point is only that two spellings of
+  // one day converge.
+  if (/(?:s|x|z|ch|sh)es$/.test(base)) return base.slice(0, -2);
+  if (/[^s]s$/.test(base)) return base.slice(0, -1);
+  return base;
+}
+
+export interface Suggestions {
+  names: string[];
+  /** Whether these came from this day type, or are just recent lifts. */
+  from: "day" | "recent";
+}
+
 export function suggestions(
   events: AnyEvent[],
   split: string | null,
   excludeDate: string,
   limit = 8,
-): string[] {
+): Suggestions {
   const splits = new Map<string, string>();
   for (const e of events) {
     if (e.kind === "split") splits.set(e.local_date, (e.payload as { split: string }).split);
   }
 
-  const key = split?.trim().toLowerCase() ?? null;
+  const key = split ? normaliseSplit(split) : null;
   const seen = new Set<string>();
   const out: string[] = [];
 
@@ -204,26 +229,31 @@ export function suggestions(
     .filter((e) => e.kind === "lift" && e.local_date !== excludeDate)
     .sort((a, b) => b.local_date.localeCompare(a.local_date));
 
-  for (const e of lifts) {
-    if (key && (splits.get(e.local_date) ?? "").trim().toLowerCase() !== key) continue;
-    const name = (e.payload as { ex: string }).ex;
-    if (seen.has(name)) continue;
-    seen.add(name);
-    out.push(name);
-    if (out.length >= limit) break;
-  }
-
-  // No day type, or a day type never trained before: fall back to all recent lifts.
-  if (!out.length) {
+  // Only claim the list belongs to a day type when there IS one. With no day set, the
+  // unfiltered loop would fill `out` and then report it as day-scoped, which is a lie
+  // the UI would repeat.
+  if (key) {
     for (const e of lifts) {
+      if (normaliseSplit(splits.get(e.local_date) ?? "") !== key) continue;
       const name = (e.payload as { ex: string }).ex;
       if (seen.has(name)) continue;
       seen.add(name);
       out.push(name);
       if (out.length >= limit) break;
     }
+    if (out.length) return { names: out, from: "day" };
   }
-  return out;
+
+  // No day type, or a day type never trained before: fall back to all recent lifts,
+  // and say so, rather than presenting them as if they belonged to this day.
+  for (const e of lifts) {
+    const name = (e.payload as { ex: string }).ex;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= limit) break;
+  }
+  return { names: out, from: "recent" };
 }
 
 /** The most recent previous day this exercise was done, with its sets. */

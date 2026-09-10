@@ -119,31 +119,42 @@ describe("suggestions — scoped to the day type", () => {
   ];
 
   it("shows bench on push day and not on pull day", () => {
-    expect(suggestions(events, "Push", D)).toContain("Bench press");
-    expect(suggestions(events, "Pull", D)).not.toContain("Bench press");
-    expect(suggestions(events, "Pull", D)).toContain("Barbell row");
+    expect(suggestions(events, "Push", D).names).toContain("Bench press");
+    expect(suggestions(events, "Pull", D).names).not.toContain("Bench press");
+    expect(suggestions(events, "Pull", D).names).toContain("Barbell row");
   });
 
   it("matches the day type case-insensitively", () => {
-    expect(suggestions(events, "push", D)).toContain("Bench press");
+    expect(suggestions(events, "push", D).names).toContain("Bench press");
+  });
+
+  it("matches across plurals and a trailing 'day'", () => {
+    expect(suggestions(events, "Push day", D).names).toContain("Bench press");
+    expect(suggestions(events, "pushes", D).names).toContain("Bench press");
+  });
+
+  it("says whether the list came from this day type or is just recent", () => {
+    expect(suggestions(events, "Push", D).from).toBe("day");
+    expect(suggestions(events, "Legs", D).from).toBe("recent");
+    expect(suggestions(events, null, D).from).toBe("recent");
   });
 
   it("orders most recent first", () => {
-    expect(suggestions(events, "Push", D)[0]).toBe("Overhead press");
+    expect(suggestions(events, "Push", D).names[0]).toBe("Overhead press");
   });
 
   it("falls back to every recent lift with no day type", () => {
-    const all = suggestions(events, null, D);
+    const all = suggestions(events, null, D).names;
     expect(all).toEqual(expect.arrayContaining(["Bench press", "Barbell row", "Overhead press"]));
   });
 
   it("falls back rather than showing nothing for an unseen day type", () => {
-    expect(suggestions(events, "Legs", D).length).toBeGreaterThan(0);
+    expect(suggestions(events, "Legs", D).names.length).toBeGreaterThan(0);
   });
 
   it("excludes the day being edited, so today's lifts are not suggested back", () => {
     const withToday = [...events, lift("Dips", 0, 12, "18:00", D)];
-    expect(suggestions(withToday, null, D)).not.toContain("Dips");
+    expect(suggestions(withToday, null, D).names).not.toContain("Dips");
   });
 });
 

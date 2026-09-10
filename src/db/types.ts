@@ -47,7 +47,13 @@ export interface Payloads {
     kcal: number; p: number; c: number; f: number; foodId?: string;
   };
 
-  lift: { ex: string; kg: number; reps: number; rpe?: number; at: string };
+  lift: {
+    ex: string; kg: number; reps: number; rpe?: number; at: string;
+    /** A drop straight off the previous set — no rest, lighter. */
+    drop?: boolean;
+    /** Shared id for sets alternated as a superset. */
+    ss?: string;
+  };
   split: { split: string };
   effort: { rpe: number };
   /** `end` is the moment End workout was tapped. Without it the clock can only guess
