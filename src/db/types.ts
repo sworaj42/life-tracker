@@ -67,7 +67,9 @@ export interface Payloads {
   income: { amount: number; cat: string; label: string; receipt?: string };
 
   note: { text: string };
-  did: { text: string; at: string };
+  /** `at` is when the activity started — the clock time if you typed one, otherwise the
+   *  moment it was logged. `end` is only set when you gave a range. */
+  did: { text: string; at: string; end?: string };
   work: {
     track: Track; skill?: string; start: string; end: string; mins: number;
     /** What you set out to do, captured before the timer starts. */

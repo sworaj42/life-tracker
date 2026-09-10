@@ -69,6 +69,10 @@ export function Today() {
 const hm = (mins: number) =>
   `${Math.floor(mins / 60)}h ${String(Math.round(mins) % 60).padStart(2, "0")}m`;
 
+/** "45m", "2h 05m" — a duration short enough to sit at the end of a log row. */
+const shortDur = (mins: number) =>
+  mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
+
 function SleepCard({ segments, onOpen }: { segments: AnyEvent[]; onOpen: () => void }) {
   const segs = segments.map((e) => {
     const p = e.payload as { start: string; end: string; value: SleepValue };
@@ -349,6 +353,13 @@ function CoffeeRow({ label, value, color }: { label: string; value: string; colo
 
 // ---------------------------------------------------------------------------
 
+/** The two clock boxes under the activity field. Narrow enough to sit side by side on a
+ *  phone; `colorScheme: dark` keeps the native picker from rendering white-on-white. */
+const TIME_BOX: React.CSSProperties = {
+  ...INPUT, width: 104, minHeight: 38, padding: "8px 10px", fontSize: 13,
+  colorScheme: "dark", ...num,
+};
+
 /**
  * What I did.
  *
@@ -364,11 +375,21 @@ function DidCard() {
   const typed = useLive<AnyEvent[]>(() => eventsOfKindOnDate("did", date), [date], []);
   const work = useLive<AnyEvent[]>(() => eventsOfKindOnDate("work", date), [date], []);
   const [text, setText] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
 
   const rows = [
     ...typed.map((e) => {
-      const p = e.payload as { text: string; at?: string };
-      return { id: e.id, at: p.at ?? "", text: p.text, sub: "", removable: true };
+      const p = e.payload as { text: string; at?: string; end?: string };
+      const at = p.at ?? "";
+      return {
+        id: e.id,
+        sort: at,
+        at: p.end ? `${at}–${p.end}` : at,
+        text: p.text,
+        sub: p.end && at ? shortDur(dur(at, p.end)) : "",
+        removable: true,
+      };
     }),
     ...work.map((e) => {
       const p = e.payload as {
@@ -377,23 +398,34 @@ function DidCard() {
       };
       return {
         id: e.id,
+        sort: p.start,
         at: `${p.start}–${p.end}`,
         // What you got done if you said, otherwise what you set out to do.
         text: p.note || p.focus || p.skill || p.track,
-        sub: `${p.track}${p.skill ? ` · ${p.skill}` : ""} · ${
-          p.mins < 60 ? `${p.mins}m` : `${Math.floor(p.mins / 60)}h ${String(p.mins % 60).padStart(2, "0")}m`}`,
+        sub: `${p.track}${p.skill ? ` · ${p.skill}` : ""} · ${shortDur(p.mins)}`,
         removable: false,
       };
     }),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  ].sort((a, b) => a.sort.localeCompare(b.sort));
 
   const tracked = work.reduce((s, e) => s + ((e.payload as { mins: number }).mins || 0), 0);
 
+  // Both blank means now, which is what an untimed entry has always meant. One time on
+  // its own is when it happened, not half a range — a lone end with an implied start of
+  // "now" would otherwise read backwards for anything already finished.
   const add = async () => {
     const t = text.trim();
     if (!t) return;
-    await logEvent("did", { text: t, at: localTime() }, { local_date: date });
+    const at = start || end || localTime();
+    const range = start && end && start !== end;
+    await logEvent(
+      "did",
+      range ? { text: t, at, end } : { text: t, at },
+      { local_date: date },
+    );
     setText("");
+    setStart("");
+    setEnd("");
     bump();
   };
 
@@ -420,6 +452,23 @@ function DidCard() {
         }}>
           +
         </button>
+      </div>
+
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4,
+      }}>
+        <input type="time" value={start} aria-label="Started at"
+          onChange={(e) => setStart(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void add()}
+          style={TIME_BOX} />
+        <span style={{ fontSize: 12, color: C.faint }}>–</span>
+        <input type="time" value={end} aria-label="Ended at"
+          onChange={(e) => setEnd(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void add()}
+          style={TIME_BOX} />
+        <span style={{ fontSize: 11.5, color: C.faint }}>
+          {start ? "when it ran" : "optional — blank logs it at the time you add it"}
+        </span>
       </div>
 
       {rows.map((r) => (
@@ -459,8 +508,7 @@ function DidCard() {
 
       {tracked > 0 && (
         <div style={{ fontSize: 11.5, color: C.faint, paddingTop: 8, ...num }}>
-          {tracked < 60 ? `${tracked}m` : `${Math.floor(tracked / 60)}h ${String(tracked % 60).padStart(2, "0")}m`}
-          {" "}of tracked sessions
+          {shortDur(tracked)} of tracked sessions
         </div>
       )}
 
