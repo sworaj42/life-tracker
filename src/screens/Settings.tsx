@@ -12,11 +12,12 @@
  *     macros and not for maintenance; here every override has one.
  */
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { getProfile, saveProfile, allEventsRaw, outboxCount } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type Profile } from "@/db/types";
 import { supabase } from "@/lib/supabase";
+import { subscribe, drain, type SyncState } from "@/sync";
 import { buildExport, exportFilename, downloadJson } from "@/lib/export";
 import { weightStats } from "@/lib/calc/weight";
 import { C, num, input as inputStyle, cta } from "@/ui/tokens";
@@ -218,6 +219,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
 function DataCard({ events, pending }: { events: number; pending: number }) {
   const [state, setState] = useState<"idle" | "working" | "copied" | "saved">("idle");
+  // A queue that fails quietly is worse than no queue, and until now the only symptom
+  // of a rejected write was a pending count that would not go down.
+  const [sync, setSync] = useState<SyncState | null>(null);
+  useEffect(() => subscribe(setSync), []);
 
   const doExport = async (copy: boolean) => {
     setState("working");
@@ -243,7 +248,36 @@ function DataCard({ events, pending }: { events: number; pending: number }) {
         backups at all.
       </div>
       <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 12, ...num }}>
-        {events} events stored{pending > 0 && ` · ${pending} still waiting to sync`}
+        {events} events stored{pending > 0 && ` · ${pending} waiting to sync`}
+      </div>
+
+      <div style={{
+        borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 10, marginBottom: 12,
+      }}>
+        <Line label="Connection" value={sync?.online === false ? "offline" : "online"}
+          color={sync?.online === false ? C.food : C.green} />
+        <Line label="Waiting to sync" value={String(pending)}
+          color={pending > 0 ? C.food : C.soft} />
+        <Line label="Last synced"
+          value={sync?.lastSyncedAt
+            ? new Date(sync.lastSyncedAt).toLocaleTimeString(undefined,
+                { hour: "2-digit", minute: "2-digit" })
+            : "not yet"} />
+        {sync?.lastError && (
+          <div style={{
+            fontSize: 11, color: C.red, marginTop: 8, lineHeight: 1.5,
+            wordBreak: "break-word",
+          }}>
+            Last error: {sync.lastError}
+          </div>
+        )}
+        <button onClick={() => void drain()} style={{
+          border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+          borderRadius: 10, padding: "7px 12px", fontSize: 12, color: C.soft,
+          cursor: "pointer", marginTop: 10,
+        }}>
+          Sync now
+        </button>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button style={cta(ACCENT)} onClick={() => void doExport(false)}>
@@ -260,6 +294,17 @@ function DataCard({ events, pending }: { events: number; pending: number }) {
         Installed on iOS, a download may be blocked — Copy always works.
       </div>
     </Card>
+  );
+}
+
+function Line({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", padding: "4px 0", ...num,
+    }}>
+      <span style={{ fontSize: 12, color: C.soft }}>{label}</span>
+      <span style={{ fontSize: 12, color: color ?? C.ink }}>{value}</span>
+    </div>
   );
 }
 
