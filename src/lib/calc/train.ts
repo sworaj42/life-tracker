@@ -30,7 +30,10 @@ export interface SetRow {
 
 export interface Exercise {
   name: string;
+  /** Every row, drops included — they are shown, just not counted. */
   sets: SetRow[];
+  /** Working sets. A drop continues the set before it rather than starting a new one. */
+  count: number;
   volume: number;
   topKg: number;
 }
@@ -45,6 +48,8 @@ export interface TrainDay {
   setCount: number;
   /** Heaviest set of the day, as `85kg × 5`. */
   topSet: string;
+  /** How many of the rows were drops, for the session summary. */
+  dropCount: number;
 }
 
 const liftsOn = (events: AnyEvent[], date: string): SetRow[] =>
@@ -83,6 +88,7 @@ export function trainDay(events: AnyEvent[], date: string): TrainDay {
     return {
       name,
       sets: rows,
+      count: rows.filter((r) => !r.drop).length,
       volume: rows.reduce((s, r) => s + r.kg * r.reps, 0),
       topKg: rows.reduce((m, r) => Math.max(m, r.kg), 0),
     };
@@ -96,7 +102,11 @@ export function trainDay(events: AnyEvent[], date: string): TrainDay {
     // Exact, not rounded: half-kg plates make .5 totals normal, and rounding belongs
     // at the point of display rather than in the number itself.
     volume,
-    setCount: sets.length,
+    // Working sets only. A drop is the tail of the set before it — counting it
+    // separately makes a 5-set session read as 8 and quietly inflates every week.
+    // The volume above still includes the drop, because you did lift that weight.
+    setCount: sets.filter((r) => !r.drop).length,
+    dropCount: sets.filter((r) => r.drop).length,
     topSet: top ? `${top.kg}kg × ${top.reps}` : "—",
   };
 }

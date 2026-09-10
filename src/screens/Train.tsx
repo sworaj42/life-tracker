@@ -193,6 +193,9 @@ function LogCard({
   const activeSets = active
     ? day.sets.filter((s) => s.ex.trim().toLowerCase() === active.trim().toLowerCase())
     : [];
+  // A drop continues the previous set, so it does not add to the count.
+  const activeWorking = activeSets.filter((x) => !x.drop).length;
+  const activeDrops = activeSets.length - activeWorking;
   // The first half of the pair, so swapping back knows where to go.
   const activeBase = partner
     ? day.sets.find((s) => s.ss === ssId && s.ex !== partner)?.ex ?? null
@@ -209,6 +212,7 @@ function LogCard({
         <span style={{ fontSize: 15, fontWeight: 600 }}>Log workout</span>
         <span style={{ fontSize: 12, color: C.faint, ...num }}>
           {day.setCount > 0 && `${day.setCount} set${day.setCount === 1 ? "" : "s"}`}
+          {day.dropCount > 0 && ` · ${day.dropCount} drop`}
         </span>
       </div>
 
@@ -332,7 +336,10 @@ function LogCard({
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{active}</span>
                 )}
                 <span style={{ fontSize: 11.5, color: ACCENT, ...num }}>
-                  {activeSets.length} set{activeSets.length === 1 ? "" : "s"}
+                  {activeWorking} set{activeWorking === 1 ? "" : "s"}
+                  {activeDrops > 0 && (
+                    <span style={{ color: C.food }}> · {activeDrops} drop</span>
+                  )}
                 </span>
               </div>
 
@@ -762,7 +769,7 @@ function SessionCard({
             }}>
               <span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.name}</span>
               <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
-                {x.sets.length} × · {Math.round(x.volume).toLocaleString()} kg
+                {x.count} × · {Math.round(x.volume).toLocaleString()} kg
               </span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

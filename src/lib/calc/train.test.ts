@@ -44,6 +44,26 @@ describe("trainDay", () => {
     expect(trainDay([...events, ev("dayEnd", {}, D)], D).ended).toBe(true);
   });
 
+  it("counts a drop as part of the set before it, not a new one", () => {
+    const withDrop = [
+      ...events,
+      ev("lift", { ex: "Bench press", kg: 45, reps: 6, at: "18:54", drop: true }, D),
+    ];
+    const d = trainDay(withDrop, D);
+    expect(d.setCount).toBe(3);       // still three working sets
+    expect(d.dropCount).toBe(1);
+    expect(d.exercises[0].count).toBe(2);
+    expect(d.exercises[0].sets).toHaveLength(3); // but the row is still shown
+  });
+
+  it("still counts the drop's work in volume — you lifted it", () => {
+    const withDrop = [
+      ...events,
+      ev("lift", { ex: "Bench press", kg: 45, reps: 6, at: "18:54", drop: true }, D),
+    ];
+    expect(trainDay(withDrop, D).volume).toBe(60 * 8 + 62.5 * 7 + 40 * 10 + 45 * 6);
+  });
+
   it("is empty for a day with nothing logged", () => {
     const d = trainDay(events, "2026-09-08");
     expect(d.setCount).toBe(0);
