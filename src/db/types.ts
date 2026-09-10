@@ -30,7 +30,9 @@ export type Meal =
   | "breakfast" | "lunch" | "dinner"
   | "morningSnack" | "afternoonSnack" | "eveningSnack";
 
-export type Track = "masters" | "skills" | "gaming";
+/** `license` is the engineering licence exam. It lives in the same shape as the other
+ *  tracks, so it gets the timer, the streak and the day log for free. */
+export type Track = "license" | "masters" | "skills" | "gaming";
 
 export interface Payloads {
   sleep: { start: string; end: string; value: SleepValue; source?: string };

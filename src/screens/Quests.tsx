@@ -87,6 +87,8 @@ export function Quests() {
       {stale && <StalePrompt session={stale} onSave={finish} onDiscard={discard} />}
 
       <Eyebrow>Goals</Eyebrow>
+      <TrackCard track="license" events={events} session={session} now={now}
+        onStart={start} onEnd={finish} onDiscard={discard} />
       <TrackCard track="masters" events={events} session={session} now={now}
         onStart={start} onEnd={finish} onDiscard={discard} />
       <JobsCard events={events} />
@@ -189,7 +191,7 @@ function TrackCard({
   onDiscard: () => Promise<void>;
 }) {
   const meta = TRACKS.find((t) => t.key === track)!;
-  const [open, setOpen] = useState(track === "masters");
+  const [open, setOpen] = useState(track === "license");
   // idle -> starting (what are you working on) -> running -> ending (what did you get done)
   const [stage, setStage] = useState<"idle" | "starting" | "ending">("idle");
   const [focus, setFocus] = useState("");
@@ -315,7 +317,11 @@ function TrackCard({
                     setStage("idle");
                   }
                 }}
-                placeholder={meta.subjectLabel ? "What exactly" : "SOP draft, IELTS reading…"}
+                placeholder={
+                  meta.subjectLabel ? "What exactly"
+                    : track === "license" ? "Past papers, structures revision…"
+                      : "SOP draft, IELTS reading…"
+                }
                 style={{ ...INPUT, marginBottom: 8 }} />
 
               {meta.subjectLabel && (
@@ -466,6 +472,8 @@ function Mini({ label, value }: { label: string; value: string }) {
 
 function TrackIcon({ track, color }: { track: Track; color: string }) {
   const d = {
+    // A certificate with a seal — the thing the exam is for.
+    license: "M5 3.2h9l3.6 3.6v11.4c0 .6-.5 1-1 1H5c-.6 0-1-.4-1-1V4.2c0-.6.4-1 1-1z M13.6 3.4v3.6h3.6 M7.2 9.6h6 M7.2 12.4h4.4 M11.4 15.2a2.2 2.2 0 104.4 0 2.2 2.2 0 10-4.4 0z M12.2 17v2.4l1.4-.8 1.4.8V17",
     masters: "M11 3.4 20 7.6 11 11.8 2 7.6z M5.6 9.8v4.4c0 1.6 2.4 2.9 5.4 2.9s5.4-1.3 5.4-2.9V9.8 M19.2 8.4v4.6",
     skills: "M3.4 4.4h5.2c1.4 0 2.4.9 2.4 2v10c0-1-1-1.8-2.4-1.8H3.4z M18.6 4.4h-5.2c-1.4 0-2.4.9-2.4 2v10c0-1 1-1.8 2.4-1.8h5.2z",
     gaming: "M7.4 6.8h7.2c2.6 0 4.6 2 5 4.6l.5 3.2c.2 1.4-.8 2.6-2.2 2.6-.8 0-1.5-.4-1.9-1.1l-.9-1.5H6.9l-.9 1.5c-.4.7-1.1 1.1-1.9 1.1-1.4 0-2.4-1.2-2.2-2.6l.5-3.2c.4-2.6 2.4-4.6 5-4.6z M6.4 10.4v2.4 M5.2 11.6h2.4 M14.6 10.6h.1 M16.4 12.4h.1",

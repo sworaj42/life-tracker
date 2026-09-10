@@ -20,6 +20,8 @@ import { toMin, fmtMin, shiftDays, today } from "@/lib/date";
 export const TRACKS: {
   key: Track; label: string; accent: string; subjectLabel: string | null;
 }[] = [
+  // First, because it is the thing being prepared for daily right now.
+  { key: "license", label: "Licence exam", accent: "#E2B461", subjectLabel: null },
   { key: "masters", label: "Masters", accent: "#B6A6E8", subjectLabel: null },
   { key: "skills", label: "Skills", accent: "#6FC29A", subjectLabel: "Skill" },
   { key: "gaming", label: "Gaming", accent: "#5FBFB0", subjectLabel: "Game" },
