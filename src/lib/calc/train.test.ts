@@ -64,6 +64,31 @@ describe("trainDay", () => {
     expect(trainDay(withDrop, D).volume).toBe(60 * 8 + 62.5 * 7 + 40 * 10 + 45 * 6);
   });
 
+  it("holds a superset together as one block", () => {
+    const ss = [
+      ev("lift", { ex: "Bench press", kg: 60, reps: 8, at: "18:45", ss: "g1" }, D),
+      ev("lift", { ex: "Barbell row", kg: 55, reps: 8, at: "18:48", ss: "g1" }, D),
+      ev("lift", { ex: "Bench press", kg: 60, reps: 7, at: "18:53", ss: "g1" }, D),
+      ev("lift", { ex: "Barbell row", kg: 55, reps: 7, at: "18:56", ss: "g1" }, D),
+    ];
+    const g = trainDay(ss, D).groups;
+    expect(g).toHaveLength(1);
+    expect(g[0].superset).toBe(true);
+    expect(g[0].exercises.map((e) => e.name)).toEqual(["Bench press", "Barbell row"]);
+    expect(g[0].count).toBe(4);
+  });
+
+  it("keeps ordinary exercises as their own blocks", () => {
+    const g = trainDay(events, D).groups;
+    expect(g).toHaveLength(2);
+    expect(g.every((x) => !x.superset)).toBe(true);
+  });
+
+  it("does not call a lone exercise a superset just because it has an id", () => {
+    const lone = [ev("lift", { ex: "Bench press", kg: 60, reps: 8, at: "18:45", ss: "g1" }, D)];
+    expect(trainDay(lone, D).groups[0].superset).toBe(false);
+  });
+
   it("is empty for a day with nothing logged", () => {
     const d = trainDay(events, "2026-09-08");
     expect(d.setCount).toBe(0);

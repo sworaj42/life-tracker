@@ -38,12 +38,30 @@ export interface Exercise {
   topKg: number;
 }
 
+/**
+ * A block in the session log.
+ *
+ * A superset is one block containing both exercises, because that is how it was done —
+ * rendering the two halves as separate blocks loses the fact that they were alternated,
+ * which is the only reason to have logged them that way.
+ */
+export interface ExerciseGroup {
+  id: string;
+  superset: boolean;
+  exercises: Exercise[];
+  /** Working sets across the whole block. */
+  count: number;
+  volume: number;
+}
+
 export interface TrainDay {
   date: string;
   split: string | null;
   ended: boolean;
   sets: SetRow[];
   exercises: Exercise[];
+  /** The same sets arranged for display: supersets held together. */
+  groups: ExerciseGroup[];
   volume: number;
   setCount: number;
   /** Heaviest set of the day, as `85kg × 5`. */
@@ -94,11 +112,54 @@ export function trainDay(events: AnyEvent[], date: string): TrainDay {
     };
   });
 
+  // Grouped for the log: sets sharing a superset id become one block, everything else
+  // stands alone. An exercise done both ways in a day appears in both, which is honest —
+  // those sets happened in different contexts.
+  const groupOrder: string[] = [];
+  const groupSets = new Map<string, SetRow[]>();
+  for (const r of sets) {
+    const key = r.ss ? `ss:${r.ss}` : `solo:${r.ex}`;
+    if (!groupSets.has(key)) {
+      groupSets.set(key, []);
+      groupOrder.push(key);
+    }
+    groupSets.get(key)!.push(r);
+  }
+
+  const groups: ExerciseGroup[] = groupOrder.map((key) => {
+    const rows = groupSets.get(key)!;
+    const names: string[] = [];
+    const inner = new Map<string, SetRow[]>();
+    for (const r of rows) {
+      if (!inner.has(r.ex)) {
+        inner.set(r.ex, []);
+        names.push(r.ex);
+      }
+      inner.get(r.ex)!.push(r);
+    }
+    return {
+      id: key,
+      superset: key.startsWith("ss:") && names.length > 1,
+      exercises: names.map((n) => {
+        const es = inner.get(n)!;
+        return {
+          name: n,
+          sets: es,
+          count: es.filter((r) => !r.drop).length,
+          volume: es.reduce((a, r) => a + r.kg * r.reps, 0),
+          topKg: es.reduce((m, r) => Math.max(m, r.kg), 0),
+        };
+      }),
+      count: rows.filter((r) => !r.drop).length,
+      volume: rows.reduce((a, r) => a + r.kg * r.reps, 0),
+    };
+  });
+
   const volume = sets.reduce((s, r) => s + r.kg * r.reps, 0);
   const top = sets.reduce<SetRow | null>((m, r) => (!m || r.kg > m.kg ? r : m), null);
 
   return {
-    date, split, ended, sets, exercises,
+    date, split, ended, sets, exercises, groups,
     // Exact, not rounded: half-kg plates make .5 totals normal, and rounding belongs
     // at the point of display rather than in the number itself.
     volume,

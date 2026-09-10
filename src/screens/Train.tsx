@@ -757,36 +757,64 @@ function SessionCard({
         </div>
       )}
 
-      {day.exercises.map((x) => {
-        const prev = lastTime(events, x.name, date);
-        return (
-          <div key={x.name} style={{
-            paddingTop: 12, marginTop: 12, borderTop: "1px solid rgba(255,255,255,.08)",
-          }}>
+      {day.groups.map((g) => (
+        <div key={g.id} style={{
+          paddingTop: 12, marginTop: 12, borderTop: "1px solid rgba(255,255,255,.08)",
+        }}>
+          {g.superset && (
             <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              gap: 10, marginBottom: 8,
+              display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
             }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.name}</span>
-              <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
-                {x.count} × · {Math.round(x.volume).toLocaleString()} kg
+              <span style={{ color: C.skill, fontSize: 11 }}>⇄</span>
+              <span style={{
+                fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase",
+                color: C.skill,
+              }}>
+                Superset
+              </span>
+              <span style={{ fontSize: 11.5, color: C.faint, marginLeft: "auto", ...num }}>
+                {g.count} set{g.count === 1 ? "" : "s"} · {Math.round(g.volume).toLocaleString()} kg
               </span>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {x.sets.map((sx) => (
-                <SetChip key={sx.id} set={sx} editing={false}
-                  onEdit={() => onEditSet(sx)}
-                  onRemove={async () => { await removeEvent(sx.id); bump(); }} />
-              ))}
-            </div>
-            {prev && (
-              <div style={{ fontSize: 11.5, color: C.faint, marginTop: 7, ...num }}>
-                Last time ({dayLabel(prev.date)}): {summarise(prev.sets)}
-              </div>
-            )}
+          )}
+
+          {/* A superset's halves sit inside one bordered block, so the log shows they
+              were alternated rather than done one after the other. */}
+          <div style={g.superset ? {
+            borderLeft: `2px solid ${C.skill}`, paddingLeft: 10,
+            display: "flex", flexDirection: "column", gap: 12,
+          } : undefined}>
+            {g.exercises.map((x) => {
+              const prev = lastTime(events, x.name, date);
+              return (
+                <div key={x.name}>
+                  <div style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                    gap: 10, marginBottom: 8,
+                  }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{x.name}</span>
+                    <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
+                      {x.count} × · {Math.round(x.volume).toLocaleString()} kg
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {x.sets.map((sx) => (
+                      <SetChip key={sx.id} set={sx} editing={false}
+                        onEdit={() => onEditSet(sx)}
+                        onRemove={async () => { await removeEvent(sx.id); bump(); }} />
+                    ))}
+                  </div>
+                  {prev && !g.superset && (
+                    <div style={{ fontSize: 11.5, color: C.faint, marginTop: 7, ...num }}>
+                      Last time ({dayLabel(prev.date)}): {summarise(prev.sets)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </section>
   );
 }
