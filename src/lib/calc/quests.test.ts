@@ -54,6 +54,18 @@ describe("sessionRows — a session crossing midnight is two rows", () => {
     }
   });
 
+  it("carries both the intent and the result", () => {
+    const r = sessionRows("masters", "2026-09-09", 600, 660, "Wrote 400 words", undefined, "SOP draft");
+    expect(r[0].payload.focus).toBe("SOP draft");
+    expect(r[0].payload.note).toBe("Wrote 400 words");
+  });
+
+  it("omits either when it was not given", () => {
+    const r = sessionRows("masters", "2026-09-09", 600, 660);
+    expect(r[0].payload).not.toHaveProperty("focus");
+    expect(r[0].payload).not.toHaveProperty("note");
+  });
+
   it("omits the subject entirely for a track that has none", () => {
     expect(sessionRows("masters", "2026-09-09", 600, 660)[0].payload).not.toHaveProperty("skill");
   });

@@ -57,17 +57,17 @@ export function Quests() {
     });
   }, []);
 
-  const start = async (track: Track, skill?: string) => {
+  const start = async (track: Track, skill?: string, focus?: string) => {
     // One timer globally: starting one ends any other.
     const s: ActiveSession = {
-      track, skill, start: nowMin(), local_date: today(), started_at: Date.now(),
+      track, skill, focus, start: nowMin(), local_date: today(), started_at: Date.now(),
     };
     await setActiveSession(s);
     setSession(s);
   };
 
   const finish = async (s: ActiveSession, endMin: number, note?: string) => {
-    for (const row of sessionRows(s.track, s.local_date, s.start, endMin, note, s.skill)) {
+    for (const row of sessionRows(s.track, s.local_date, s.start, endMin, note, s.skill, s.focus)) {
       await logEvent("work", row.payload as never, { local_date: row.local_date });
     }
     await setActiveSession(null);
@@ -163,6 +163,12 @@ function StalePrompt({
   );
 }
 
+const ghostBtn: React.CSSProperties = {
+  height: 42, padding: "0 14px", borderRadius: 12,
+  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
+  color: "#97A1B8", fontSize: 13, cursor: "pointer",
+};
+
 const cta = (bg: string, ink = "#171233"): React.CSSProperties => ({
   height: 42, borderRadius: 12, border: "none", background: bg, color: ink,
   fontSize: 14, fontWeight: 600, cursor: "pointer",
@@ -178,12 +184,15 @@ function TrackCard({
   events: AnyEvent[];
   session: ActiveSession | null;
   now: number;
-  onStart: (t: Track, skill?: string) => Promise<void>;
+  onStart: (t: Track, skill?: string, focus?: string) => Promise<void>;
   onEnd: (s: ActiveSession, endMin: number, note?: string) => Promise<void>;
   onDiscard: () => Promise<void>;
 }) {
   const meta = TRACKS.find((t) => t.key === track)!;
   const [open, setOpen] = useState(track === "masters");
+  // idle -> starting (what are you working on) -> running -> ending (what did you get done)
+  const [stage, setStage] = useState<"idle" | "starting" | "ending">("idle");
+  const [focus, setFocus] = useState("");
   const [note, setNote] = useState("");
   const [subject, setSubject] = useState("");
   const [day, setDay] = useState(today());
@@ -232,10 +241,15 @@ function TrackCard({
               border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "10px 12px",
               borderColor: `${meta.accent}59`, background: `${meta.accent}14`, marginBottom: 12,
             }}>
+              {/* Duration first, with a pulsing dot — mid-session the elapsed time is
+                  the number you want, not the moment it began. */}
               <div style={{
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                gap: 10, marginBottom: 10,
+                display: "flex", alignItems: "center", gap: 9, marginBottom: 8, flexWrap: "wrap",
               }}>
+                <span style={{
+                  width: 9, height: 9, borderRadius: "50%", background: meta.accent,
+                  animation: "livePulse 1.6s ease-in-out infinite", flex: "none",
+                }} />
                 <span style={{
                   fontSize: 28, fontWeight: 600, lineHeight: 1,
                   letterSpacing: "-0.01em", ...num,
@@ -244,28 +258,66 @@ function TrackCard({
                 </span>
                 <span style={{ fontSize: 12, color: meta.accent, ...num }}>
                   since {fmtMin(mine.start)}
-                  {mine.skill && ` · ${mine.skill}`}
                 </span>
               </div>
-              <input value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="What are you working on"
-                style={{ ...INPUT, marginBottom: 8 }} />
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
-                <button onClick={() => { void onEnd(mine, nowMin(), note.trim() || undefined); setNote(""); }}
-                  style={cta(meta.accent)}>
-                  End session
-                </button>
-                <button onClick={() => void onDiscard()} style={{
-                  height: 42, padding: "0 14px", borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                  color: C.soft, fontSize: 13, cursor: "pointer",
-                }}>
-                  Discard
-                </button>
-              </div>
+
+              {(mine.focus || mine.skill) && (
+                <div style={{ fontSize: 12.5, color: C.soft, marginBottom: 10 }}>
+                  {mine.focus || mine.skill}
+                </div>
+              )}
+
+              {stage === "ending" ? (
+                <>
+                  <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>
+                    What did you get done?
+                  </div>
+                  <input value={note} onChange={(e) => setNote(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        void onEnd(mine, nowMin(), note.trim() || undefined);
+                        setNote(""); setFocus(""); setStage("idle");
+                      }
+                    }}
+                    placeholder="Two pages of the SOP"
+                    style={{ ...INPUT, marginBottom: 8 }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
+                    <button onClick={() => {
+                      void onEnd(mine, nowMin(), note.trim() || undefined);
+                      setNote(""); setFocus(""); setStage("idle");
+                    }} style={cta(meta.accent)}>
+                      End session
+                    </button>
+                    <button onClick={() => setStage("idle")} style={ghostBtn}>Back</button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
+                  <button onClick={() => setStage("ending")} style={cta(meta.accent)}>
+                    End session
+                  </button>
+                  <button onClick={() => { void onDiscard(); setStage("idle"); }} style={ghostBtn}>
+                    Discard
+                  </button>
+                </div>
+              )}
             </div>
-          ) : (
-            <>
+          ) : stage === "starting" ? (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>
+                What are you working on?
+              </div>
+              <input value={focus} onChange={(e) => setFocus(e.target.value)} autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void onStart(track, subject.trim() || undefined, focus.trim() || undefined);
+                    setStage("idle");
+                  }
+                }}
+                placeholder={meta.subjectLabel ? "What exactly" : "SOP draft, IELTS reading…"}
+                style={{ ...INPUT, marginBottom: 8 }} />
+
               {meta.subjectLabel && (
                 <>
                   {known.length > 0 && (
@@ -287,20 +339,33 @@ function TrackCard({
                     style={{ ...INPUT, marginBottom: 8 }} />
                 </>
               )}
-              <button
-                onClick={() => void onStart(track, subject.trim() || undefined)}
-                disabled={busyElsewhere}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-                  width: "100%", height: 46, borderRadius: 13, border: "none",
-                  background: busyElsewhere ? "rgba(255,255,255,.07)" : meta.accent,
-                  color: busyElsewhere ? C.faint : "#171233",
-                  fontSize: 14.5, fontWeight: 600,
-                  cursor: busyElsewhere ? "not-allowed" : "pointer", marginBottom: 12,
-                }}>
-                {busyElsewhere ? "Another session is running" : "Start session"}
-              </button>
-            </>
+
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
+                <button onClick={() => {
+                  void onStart(track, subject.trim() || undefined, focus.trim() || undefined);
+                  setStage("idle");
+                }} style={cta(meta.accent)}>
+                  Start session
+                </button>
+                <button onClick={() => { setStage("idle"); setFocus(""); }} style={ghostBtn}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setStage("starting")}
+              disabled={busyElsewhere}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+                width: "100%", height: 46, borderRadius: 13, border: "none",
+                background: busyElsewhere ? "rgba(255,255,255,.07)" : meta.accent,
+                color: busyElsewhere ? C.faint : "#171233",
+                fontSize: 14.5, fontWeight: 600,
+                cursor: busyElsewhere ? "not-allowed" : "pointer", marginBottom: 12,
+              }}>
+              {busyElsewhere ? "Another session is running" : "Start session"}
+            </button>
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>

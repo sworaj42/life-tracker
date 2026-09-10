@@ -352,14 +352,42 @@ function CoffeeRow({ label, value, color }: { label: string; value: string; colo
 /**
  * What I did.
  *
- * A productivity log, not a full day timeline — `did` entries only. Meals, water and
- * money have their own cards, and merging them turns the one place for "what did I
- * actually get done" into a firehose.
+ * A productivity log, not a full day timeline — typed entries and tracked work sessions
+ * only. Meals, water and money have their own cards, and merging them turns the one
+ * place for "what did I actually get done" into a firehose (AUDIT C1).
+ *
+ * Sessions appear here rather than being copied into a second event: one row, one place
+ * it is written, and editing the session on Quests changes what shows here.
  */
 function DidCard() {
   const [date, setDate] = useState(today());
-  const rows = useLive<AnyEvent[]>(() => eventsOfKindOnDate("did", date), [date], []);
+  const typed = useLive<AnyEvent[]>(() => eventsOfKindOnDate("did", date), [date], []);
+  const work = useLive<AnyEvent[]>(() => eventsOfKindOnDate("work", date), [date], []);
   const [text, setText] = useState("");
+
+  const rows = [
+    ...typed.map((e) => {
+      const p = e.payload as { text: string; at?: string };
+      return { id: e.id, at: p.at ?? "", text: p.text, sub: "", removable: true };
+    }),
+    ...work.map((e) => {
+      const p = e.payload as {
+        track: string; skill?: string; start: string; end: string; mins: number;
+        focus?: string; note?: string;
+      };
+      return {
+        id: e.id,
+        at: `${p.start}–${p.end}`,
+        // What you got done if you said, otherwise what you set out to do.
+        text: p.note || p.focus || p.skill || p.track,
+        sub: `${p.track}${p.skill ? ` · ${p.skill}` : ""} · ${
+          p.mins < 60 ? `${p.mins}m` : `${Math.floor(p.mins / 60)}h ${String(p.mins % 60).padStart(2, "0")}m`}`,
+        removable: false,
+      };
+    }),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
+  const tracked = work.reduce((s, e) => s + ((e.payload as { mins: number }).mins || 0), 0);
 
   const add = async () => {
     const t = text.trim();
@@ -394,33 +422,48 @@ function DidCard() {
         </button>
       </div>
 
-      {rows.map((e) => {
-        const p = e.payload as { text: string; at?: string };
-        return (
-          <div key={e.id} style={{
-            display: "flex", gap: 10, padding: "9px 0",
-            borderTop: "1px solid rgba(255,255,255,.08)",
+      {rows.map((r) => (
+        <div key={r.id} style={{
+          display: "flex", gap: 10, padding: "9px 0",
+          borderTop: "1px solid rgba(255,255,255,.08)",
+        }}>
+          <span style={{
+            fontSize: 11.5, color: C.skill, flex: "none", width: 96, paddingTop: 1, ...num,
           }}>
-            <span style={{
-              fontSize: 11.5, color: C.skill, flex: "none", width: 96, paddingTop: 1, ...num,
-            }}>
-              {p.at ?? ""}
+            {r.at}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 13, color: C.ink, lineHeight: 1.45 }}>
+              {r.text}
             </span>
-            <span style={{
-              flex: 1, minWidth: 0, display: "block", fontSize: 13, color: C.ink, lineHeight: 1.45,
-            }}>
-              {p.text}
-            </span>
-            <button onClick={async () => { await removeEvent(e.id); bump(); }} aria-label="Remove"
+            {r.sub && (
+              <span style={{
+                display: "block", fontSize: 11.5, color: C.faint, marginTop: 2,
+                textTransform: "capitalize", ...num,
+              }}>
+                {r.sub}
+              </span>
+            )}
+          </span>
+          {r.removable && (
+            <button onClick={async () => { await removeEvent(r.id); bump(); }} aria-label="Remove"
               style={{
                 border: "none", background: "transparent", color: C.faint, cursor: "pointer",
                 fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
               }}>
               ×
             </button>
-          </div>
-        );
-      })}
+          )}
+        </div>
+      ))}
+
+      {tracked > 0 && (
+        <div style={{ fontSize: 11.5, color: C.faint, paddingTop: 8, ...num }}>
+          {tracked < 60 ? `${tracked}m` : `${Math.floor(tracked / 60)}h ${String(tracked % 60).padStart(2, "0")}m`}
+          {" "}of tracked sessions
+        </div>
+      )}
+
       {rows.length === 0 && (
         <div style={{ fontSize: 12, color: C.faint, paddingTop: 8 }}>
           Nothing logged for this day.

@@ -32,6 +32,9 @@ export interface WorkRow {
   start: string;
   end: string;
   mins: number;
+  /** What you set out to do. */
+  focus?: string;
+  /** What you got done. */
   note?: string;
   date: string;
 }
@@ -113,7 +116,10 @@ export const hm = (mins: number) =>
 
 export interface SessionWrite {
   local_date: string;
-  payload: { track: Track; skill?: string; start: string; end: string; mins: number; note?: string };
+  payload: {
+    track: Track; skill?: string; start: string; end: string; mins: number;
+    focus?: string; note?: string;
+  };
 }
 
 /**
@@ -130,8 +136,14 @@ export function sessionRows(
   endMin: number,
   note?: string,
   skill?: string,
+  focus?: string,
 ): SessionWrite[] {
-  const base = { track, ...(skill ? { skill } : {}), ...(note ? { note } : {}) };
+  const base = {
+    track,
+    ...(skill ? { skill } : {}),
+    ...(focus ? { focus } : {}),
+    ...(note ? { note } : {}),
+  };
 
   if (endMin >= startMin) {
     return [{

@@ -66,7 +66,13 @@ export interface Payloads {
 
   note: { text: string };
   did: { text: string; at: string };
-  work: { track: Track; skill?: string; start: string; end: string; mins: number; note?: string };
+  work: {
+    track: Track; skill?: string; start: string; end: string; mins: number;
+    /** What you set out to do, captured before the timer starts. */
+    focus?: string;
+    /** What you actually got done, captured when you end it. */
+    note?: string;
+  };
   art: { title: string; posted: boolean };
 
   application: { appId: string; company: string; role: string };
@@ -195,6 +201,8 @@ export interface Category {
 export interface ActiveSession {
   track: Track;
   skill?: string;
+  /** Captured before the timer starts, so it survives a reload mid-session. */
+  focus?: string;
   /** Minutes since Kathmandu midnight when it started. */
   start: number;
   local_date: string;
