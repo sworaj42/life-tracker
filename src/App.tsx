@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, hasSupabase } from "@/lib/supabase";
 import { startSync, subscribe, drain, type SyncState } from "@/sync";
+import { repairFoodDuplicates } from "@/db/local";
 import { today, toBS } from "@/lib/date";
 import { C, TABS, type TabKey, num } from "@/ui/tokens";
 import { Today } from "@/screens/Today";
@@ -32,6 +33,13 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return;
+    // Foods duplicated before saveFood deduped still deadlock against the server's
+    // unique index, and the queue retries them forever. One idempotent pass, flagged in
+    // kv so it never runs twice, and it has to be here rather than in the IndexedDB
+    // upgrade — it enqueues, and that would deadlock the version-change transaction.
+    void repairFoodDuplicates().then((n) => {
+      if (n > 0) console.info(`[spiralout] collapsed ${n} duplicate food row(s)`);
+    });
     startSync();
     return subscribe(setSync);
   }, [session]);

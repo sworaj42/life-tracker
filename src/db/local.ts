@@ -8,7 +8,7 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
-  AnyEvent, Category, Food, Kind, OutboxItem, Payloads, Profile, ActiveSession,
+  AnyEvent, Category, Food, Kind, OutboxItem, Payloads, Profile, SavedMeal, ActiveSession,
 } from "./types";
 import { DEFAULT_PROFILE } from "./types";
 import { localDate, today } from "@/lib/date";
@@ -20,6 +20,7 @@ interface Schema extends DBSchema {
     indexes: { by_date: string; by_kind: string; by_kind_date: [string, string] };
   };
   foods: { key: string; value: Food };
+  saved_meals: { key: string; value: SavedMeal };
   categories: { key: string; value: Category; indexes: { by_kind: string } };
   /** Single-row stores, keyed by a literal string. */
   kv: { key: string; value: unknown };
@@ -27,25 +28,47 @@ interface Schema extends DBSchema {
 }
 
 const DB_NAME = "spiralout";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _db: Promise<IDBPDatabase<Schema>> | null = null;
 
 export function db(): Promise<IDBPDatabase<Schema>> {
   if (!_db) {
     _db = openDB<Schema>(DB_NAME, DB_VERSION, {
-      upgrade(d) {
-        const events = d.createObjectStore("events", { keyPath: "id" });
-        events.createIndex("by_date", "local_date");
-        events.createIndex("by_kind", "kind");
-        events.createIndex("by_kind_date", ["kind", "local_date"]);
+      /**
+       * Every step is guarded by `oldVersion`.
+       *
+       * An unconditional `createObjectStore` throws ConstraintError the moment an
+       * existing install upgrades, and `openDB` then rejects — which is not a degraded
+       * app, it is a dead one. Each version's work runs once and only for databases
+       * below it.
+       */
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) {
+          const events = d.createObjectStore("events", { keyPath: "id" });
+          events.createIndex("by_date", "local_date");
+          events.createIndex("by_kind", "kind");
+          events.createIndex("by_kind_date", ["kind", "local_date"]);
 
-        d.createObjectStore("foods", { keyPath: "id" });
-        const cats = d.createObjectStore("categories", { keyPath: "id" });
-        cats.createIndex("by_kind", "kind");
+          d.createObjectStore("foods", { keyPath: "id" });
+          const cats = d.createObjectStore("categories", { keyPath: "id" });
+          cats.createIndex("by_kind", "kind");
 
-        d.createObjectStore("kv");
-        d.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true });
+          d.createObjectStore("kv");
+          d.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true });
+        }
+        if (oldVersion < 2) {
+          d.createObjectStore("saved_meals", { keyPath: "id" });
+        }
+      },
+      /**
+       * A tab still holding the old version blocks the upgrade forever, and the new tab
+       * just hangs with no error. Closing this connection when another tab wants to
+       * upgrade is the only thing that keeps a second open tab from wedging the app.
+       */
+      blocking() {
+        void _db?.then((d) => d.close());
+        _db = null;
       },
     });
   }
@@ -230,12 +253,118 @@ export async function getFoods(): Promise<Food[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Save a library food, merging onto an existing row of the same name.
+ *
+ * Postgres has `unique (user_id, lower(name)) where deleted_at is null` on `foods`. A
+ * local "Rice" written alongside an existing "rice" is accepted here, rejected there,
+ * and then retried out of the outbox forever at the five-minute backoff cap — a sync
+ * that never drains and never says why. Case-insensitive merge is the same guard
+ * `addCategory` already applies for the same reason.
+ */
 export async function saveFood(food: Omit<Food, "updated_at"> & { updated_at?: string }): Promise<Food> {
   const d = await db();
-  const next: Food = { ...food, updated_at: new Date().toISOString() };
+
+  const key = food.name.trim().toLowerCase();
+  const dupe = (await d.getAll("foods")).find(
+    (f) => !f.deleted_at && f.id !== food.id && f.name.trim().toLowerCase() === key,
+  );
+
+  // Keep the row that already exists — logged events point at its id through `foodId`,
+  // and rewriting that would orphan them.
+  const next: Food = {
+    ...food,
+    id: dupe?.id ?? food.id,
+    name: food.name.trim(),
+    updated_at: new Date().toISOString(),
+  };
   await d.put("foods", next);
   await enqueue({ table: "foods", op: "upsert", row: next as unknown as Record<string, unknown> });
   return next;
+}
+
+/**
+ * Collapse duplicate foods left behind before `saveFood` deduped.
+ *
+ * Rows already written in both cases still deadlock against the server's unique index,
+ * and the dedupe above only prevents new ones. The newest `updated_at` survives; the
+ * rest are tombstoned — which is the actual repair, because the index is partial
+ * (`where deleted_at is null`), so the re-upsert then succeeds and the queue clears.
+ *
+ * This CANNOT run inside `upgrade()`: it calls `enqueue`, which opens its own
+ * transaction, and that deadlocks against the version-change transaction. It runs once
+ * after the database is open, guarded by a flag in `kv`.
+ */
+export async function repairFoodDuplicates(): Promise<number> {
+  const d = await db();
+  if (await d.get("kv", "foods_deduped")) return 0;
+
+  const live = (await d.getAll("foods")).filter((f) => !f.deleted_at);
+  const groups = new Map<string, Food[]>();
+  for (const f of live) {
+    const key = f.name.trim().toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+
+  let fixed = 0;
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const [, ...losers] = rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    for (const l of losers) {
+      const dead: Food = { ...l, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      await d.put("foods", dead);
+      await enqueue({ table: "foods", op: "upsert", row: dead as unknown as Record<string, unknown> });
+      fixed += 1;
+    }
+  }
+
+  await d.put("kv", true, "foods_deduped");
+  return fixed;
+}
+
+// ---------------------------------------------------------------------------
+// Saved meals — a named set of library foods, logged in one tap
+// ---------------------------------------------------------------------------
+
+export async function getSavedMeals(): Promise<SavedMeal[]> {
+  const d = await db();
+  return (await d.getAll("saved_meals"))
+    .filter((m) => !m.deleted_at)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Same case-insensitive merge as `saveFood`, for the same unique index. */
+export async function saveSavedMeal(
+  meal: Omit<SavedMeal, "updated_at"> & { updated_at?: string },
+): Promise<SavedMeal> {
+  const d = await db();
+
+  const key = meal.name.trim().toLowerCase();
+  const dupe = (await d.getAll("saved_meals")).find(
+    (m) => !m.deleted_at && m.id !== meal.id && m.name.trim().toLowerCase() === key,
+  );
+
+  const next: SavedMeal = {
+    ...meal,
+    id: dupe?.id ?? meal.id,
+    name: meal.name.trim(),
+    updated_at: new Date().toISOString(),
+  };
+  await d.put("saved_meals", next);
+  await enqueue({ table: "saved_meals", op: "upsert", row: next as unknown as Record<string, unknown> });
+  return next;
+}
+
+/** Tombstone, never a hard delete — a delete cannot propagate through an offline queue. */
+export async function removeSavedMeal(id: string): Promise<void> {
+  const d = await db();
+  const cur = await d.get("saved_meals", id);
+  if (!cur) return;
+  const dead: SavedMeal = {
+    ...cur, deleted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  };
+  await d.put("saved_meals", dead);
+  await enqueue({ table: "saved_meals", op: "upsert", row: dead as unknown as Record<string, unknown> });
 }
 
 export async function getCategories(kind: "expense" | "income"): Promise<Category[]> {

@@ -45,7 +45,10 @@ function windowAvg(rs: Reading[], from: string, to: string): number | null {
 }
 
 export function weightStats(events: AnyEvent[], asOf = today()): WeightStats {
-  const rs = readings(events);
+  // Bounded by asOf, not just sorted: every other figure here is a window ending at
+  // asOf, and a `latest` that could reach past it would score a day in the past against
+  // a weight recorded after it.
+  const rs = readings(events).filter((r) => r.date <= asOf);
 
   const avg7 = windowAvg(rs, shiftDays(-6, asOf), asOf);
   const avgPrev7 = windowAvg(rs, shiftDays(-13, asOf), shiftDays(-7, asOf));

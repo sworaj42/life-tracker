@@ -15,7 +15,7 @@ import {
   outboxAll, outboxDrop, outboxRetryLater, outboxCount,
   getCursor, setCursor, mergeEvents, db,
 } from "@/db/local";
-import type { AnyEvent, Category, Food, Profile } from "@/db/types";
+import type { AnyEvent, Category, Food, OutboxItem, Profile, SavedMeal } from "@/db/types";
 
 export interface SyncState {
   pending: number;
@@ -137,13 +137,16 @@ export async function pull(): Promise<void> {
 
   await pullTable<Profile>("profile", since);
   await pullTable<Food>("foods", since);
+  await pullTable<SavedMeal>("saved_meals", since);
   await pullTable<Category>("categories", since);
 
   if (newest !== since) await setCursor(newest);
 }
 
 async function pullTable<T extends { updated_at: string }>(
-  table: "profile" | "foods" | "categories",
+  // Derived from the outbox union rather than restated, so a new synced table cannot be
+  // pushed without also being pulled.
+  table: Exclude<OutboxItem["table"], "events">,
   since: string,
 ): Promise<void> {
   const { data, error } = await supabase.from(table).select("*").gt("updated_at", since);

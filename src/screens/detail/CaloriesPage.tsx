@@ -13,12 +13,24 @@ import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type AnyEvent, type Profile } from "@/db/types";
 import { shiftDays, today } from "@/lib/date";
 import { weightStats } from "@/lib/calc/weight";
-import { maintenance, targets, dailySeries, topFoods, dayBurn } from "@/lib/calc/calories";
+import { maintenance, targets, dailySeries, topFoods, avgRestingPerDay } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT } from "@/ui/kit";
+import { INPUT } from "@/ui/kit";
 import { LineChart, Segmented, Stat, PageHead, caption } from "@/ui/charts";
 
 const ACCENT = "#E2B461";
+
+/** The detail pages use the sub-card recipe, not the heavier tab card. */
+const SUB: React.CSSProperties = {
+  background: "rgba(255,255,255,.05)",
+  backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
+  border: "1px solid rgba(255,255,255,.08)",
+  borderRadius: 14,
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
+  padding: "14px 16px",
+  marginBottom: 10,
+};
 
 export function CaloriesPage({ onBack }: { onBack: () => void }) {
   const [scope, setScope] = useState<"week" | "month">("week");
@@ -28,15 +40,15 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
 
   const profile = useLive<Profile>(() => getProfile(), [], DEFAULT_PROFILE);
   const events = useLive<AnyEvent[]>(
-    () => Promise.all([eventsOfKind("food"), eventsOfKind("energy"), eventsOfKind("lift")])
-      .then((r) => r.flat()),
+    () => Promise.all([
+      eventsOfKind("food"), eventsOfKind("energy"), eventsOfKind("lift"), eventsOfKind("session"),
+    ]).then((r) => r.flat()),
     [], [],
   );
 
-  const stats = weightStats(events.filter((e) => e.kind === "weight"));
   const weights = useLive<AnyEvent[]>(() => eventsOfKind("weight"), [], []);
   const ws = weightStats(weights);
-  const kg = ws.avg7 ?? ws.latest ?? stats.latest ?? profile.weight_start;
+  const kg = ws.avg7 ?? ws.latest ?? profile.weight_start;
 
   const maint = maintenance(profile, kg, events);
   const goal = targets(profile, maint.value, kg);
@@ -48,12 +60,27 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
   const burnt = series.filter((d) => d.burnt > 0);
   const avgBurnt = burnt.length ? burnt.reduce((s, d) => s + d.burnt, 0) / burnt.length : 0;
 
+  const energyDays = new Map<string, { active: number; basal: number }>();
+  for (const e of events) {
+    if (e.kind !== "energy") continue;
+    const p = e.payload as { active?: number; basal?: number };
+    const cur = energyDays.get(e.local_date) ?? { active: 0, basal: 0 };
+    energyDays.set(e.local_date, {
+      active: cur.active + (p.active ?? 0), basal: cur.basal + (p.basal ?? 0),
+    });
+  }
+  const inScope = [...energyDays.entries()].filter(([d]) => d >= shiftDays(-(days - 1)) && d <= today());
+  const avgActive = inScope.length ? inScope.reduce((s, [, v]) => s + v.active, 0) / inScope.length : 0;
+  const avgBasal = inScope.length ? inScope.reduce((s, [, v]) => s + v.basal, 0) / inScope.length : 0;
+
+  // Net is burnt − eaten, and only on days that have both. A day with one of the two is
+  // not a small deficit, it is an unknown one.
+  const bothDays = series.filter((d) => d.eaten > 0 && d.burnt > 0);
+  const totalNet = bothDays.reduce((s, d) => s + (d.burnt - d.eaten), 0);
+  const avgNet = bothDays.length ? totalNet / bothDays.length : 0;
+
   // The watch's resting figure — shown as a reference, never used as maintenance.
-  const restingDays = events.filter((e) => e.kind === "energy");
-  const avgResting = restingDays.length
-    ? restingDays.reduce((s, e) => s + ((e.payload as { basal?: number }).basal ?? 0), 0)
-      / restingDays.length
-    : null;
+  const avgResting = avgRestingPerDay(events, days);
 
   const top = topFoods(events, shiftDays(-(days - 1)), today());
 
@@ -83,7 +110,7 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
           onChange={setScope} accent={ACCENT} />}
       />
 
-      <section style={CARD}>
+      <section style={SUB}>
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
         }}>
@@ -138,14 +165,14 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
             ? `Activity is derived from ${maint.trainDays} training day${maint.trainDays === 1 ? "" : "s"} in the last 7.`
             : "No training logged yet, so the activity factor falls back to moderate."}
           {avgResting != null && (
-            <> Your watch reports about {Math.round(avgResting).toLocaleString()} kcal resting —
+            <> Your watch reports about {avgResting.toLocaleString()} kcal resting —
             shown as a reference only. Maintenance stays the formula, because a formula can
             be reconciled against the scale and a drifting estimate cannot.</>
           )}
         </div>
       </section>
 
-      <section style={CARD}>
+      <section style={SUB}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Daily deficit</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={async () => {
@@ -185,13 +212,46 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <Stat label="Eaten, daily average" value={Math.round(avgEaten).toLocaleString()}
+          color={ACCENT}
           sub={`${logged.length} of ${days} days logged`} />
         <Stat label="Burnt, daily average"
           value={avgBurnt > 0 ? Math.round(avgBurnt).toLocaleString() : "—"}
-          sub={avgBurnt > 0 ? `${burnt.length} days from Health` : "needs Health"} />
+          sub={avgBurnt > 0
+            ? `${Math.round(avgActive).toLocaleString()} active · ${Math.round(avgBasal).toLocaleString()} resting`
+            : "needs Health"} />
       </div>
 
-      <section style={CARD}>
+      {/* The one figure that says whether any of this is working. It is only honest on
+          days where BOTH numbers exist — averaging a day that has one against a day that
+          has the other produces a deficit nobody ate. */}
+      <section style={{ ...SUB, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>
+            {avgNet >= 0 ? "Average deficit" : "Average surplus"}
+          </div>
+          <div style={{
+            fontSize: 26, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.01em",
+            color: avgNet >= 0 ? C.green : C.red, ...num,
+          }}>
+            {bothDays.length ? Math.abs(Math.round(avgNet)).toLocaleString() : "—"}
+            <span style={{ fontSize: 13, fontWeight: 400, color: C.soft }}> kcal a day</span>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>Adds up to</div>
+          <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.1, ...num }}>
+            {bothDays.length ? Math.abs(Math.round(totalNet)).toLocaleString() : "—"}
+            <span style={{ fontSize: 12, fontWeight: 400, color: C.soft }}> kcal</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3, ...num }}>
+            {bothDays.length
+              ? `≈ ${Math.abs(totalNet / profile.kcal_per_kg_fat).toFixed(2)} kg of fat`
+              : `needs Health on a day you logged`}
+          </div>
+        </div>
+      </section>
+
+      <section style={SUB}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Eaten vs target</div>
         <LineChart
           points={series.map((d) => ({
@@ -208,8 +268,29 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
+      {burnt.length > 0 && (
+        <section style={SUB}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Burnt, each day</div>
+          <LineChart
+            points={series.map((d) => ({
+              label: d.date.slice(5),
+              value: d.burnt > 0 ? d.burnt : null,
+            }))}
+            color={C.soft}
+            reference={avgBurnt > 0 ? Math.round(avgBurnt) : undefined}
+            xLabels
+          />
+          <div style={caption}>
+            Active plus resting, from Health. A workout's calories are already inside
+            active — adding a session's figure on top would double-count the exact hour
+            you most want to trust. Read this against the chart above: the gap between
+            them is the deficit.
+          </div>
+        </section>
+      )}
+
       {top.length > 0 && (
-        <section style={CARD}>
+        <section style={SUB}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
             Where the calories come from
           </div>
@@ -240,4 +321,3 @@ const stepper: React.CSSProperties = {
   cursor: "pointer", display: "grid", placeItems: "center", padding: 0,
 };
 
-export { dayBurn };

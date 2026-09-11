@@ -318,3 +318,36 @@ export function PageHead({
 export const caption: CSSProperties = {
   fontSize: 11.5, color: C.faint, marginTop: 8, lineHeight: 1.5,
 };
+
+/**
+ * One bar split into shares — "where the calories come from".
+ *
+ * Segments are given as percentages that must already total 100: the caller adds the
+ * remainder row, because a bar whose segments add to 60% looks like a full bar and
+ * quietly misstates every share in it.
+ */
+export function StackedBar({
+  segments, height = 10,
+}: { segments: { name: string; pct: number; color: string }[]; height?: number }) {
+  return (
+    <div style={{
+      display: "flex", height, borderRadius: height / 2, overflow: "hidden",
+      background: "rgba(255,255,255,.08)",
+    }}>
+      {segments.map((s) => (
+        <span key={s.name} title={`${s.name} ${s.pct}%`}
+          style={{ display: "block", width: `${s.pct}%`, background: s.color }} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The ramp for a stacked breakdown.
+ *
+ * Drawn from the module accents in `tokens.ts` rather than invented, so a food chart
+ * sits in the same world as the rest of the app. The last colour is deliberately a flat
+ * grey — it is always "everything else", which is not a category and should not look
+ * like one.
+ */
+export const RAMP = [C.food, C.body, C.workout, C.coffee, C.water, "rgba(255,255,255,.2)"];

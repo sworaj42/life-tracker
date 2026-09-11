@@ -43,9 +43,15 @@ export interface Payloads {
   water: { glasses: number; at: string };
   coffee: { cup: string; mg: number; at: string };
   /** Macros are COPIED from the library at write time. Editing a food later must not
-   *  rewrite history — logged rows keep the numbers they were written with. */
+   *  rewrite history — logged rows keep the numbers they were written with.
+   *
+   *  `qty` is always authoritative and always written. `grams` is the same portion said
+   *  the other way, frozen alongside the macros and set only when the food carried a
+   *  gram weight: recomputing it from `qty` would restate what a past meal weighed every
+   *  time the library was corrected, and "0.67 plate" is not a number anyone can edit. */
   food: {
     name: string; qty: number; unit: string; meal: Meal; at: string;
+    grams?: number;
     kcal: number; p: number; c: number; f: number; foodId?: string;
   };
 
@@ -185,10 +191,39 @@ export interface Food {
   id: string;
   name: string;
   unit: string;
+  /** What one unit weighs, when it is known — 1 plate = 450 g. Null leaves the food a
+   *  pure multiplier ("1 egg"), which is how every row written before this existed
+   *  behaves, and the grams field simply does not appear for it. */
+  grams_per_unit?: number | null;
   kcal: number;
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  updated_at: string;
+  deleted_at?: string | null;
+}
+
+/**
+ * One line of a saved meal.
+ *
+ * It references the library food and resolves its macros AT LOG TIME — the opposite of
+ * the rule for `food` events, and deliberately so. An event is history and must freeze;
+ * a saved meal is a template for a future log, so correcting dal bhat's calories should
+ * fix every future "usual lunch". `name` is a display-only snapshot, kept so a deleted
+ * food still renders as a row that is visibly missing rather than vanishing.
+ */
+export interface SavedMealItem {
+  foodId: string;
+  name: string;
+  qty: number;
+}
+
+export interface SavedMeal {
+  id: string;
+  name: string;
+  /** The meal it usually belongs to, so it surfaces first on that screen. */
+  meal: Meal | null;
+  items: SavedMealItem[];
   updated_at: string;
   deleted_at?: string | null;
 }
@@ -217,7 +252,7 @@ export interface ActiveSession {
 /** One queued write, waiting for a network. */
 export interface OutboxItem {
   seq?: number;
-  table: "events" | "profile" | "foods" | "categories";
+  table: "events" | "profile" | "foods" | "categories" | "saved_meals";
   op: "upsert" | "delete";
   row: Record<string, unknown>;
   tries: number;

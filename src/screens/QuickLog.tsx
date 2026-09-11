@@ -8,12 +8,13 @@
  */
 
 import { useState } from "react";
-import { logEvent, getFoods, saveFood, getCategories, addCategory, uuid } from "@/db/local";
+import { logEvent, getCategories, addCategory } from "@/db/local";
 import { useLive, bump } from "@/db/store";
-import type { Category, Food, Meal } from "@/db/types";
+import type { Category, Meal } from "@/db/types";
 import { today, localTime } from "@/lib/date";
 import { C, input as inputStyle, cta, num } from "@/ui/tokens";
 import { SubCard, DayNav } from "@/ui/components";
+import { FoodPicker } from "@/ui/FoodPicker";
 
 type Tab = "expense" | "income" | "food" | "lift" | "did";
 
@@ -187,137 +188,18 @@ function MoneyForm({
 
 // ---------------------------------------------------------------------------
 
-const MEALS: { key: Meal; label: string }[] = [
-  { key: "breakfast", label: "Breakfast" },
-  { key: "lunch", label: "Lunch" },
-  { key: "dinner", label: "Dinner" },
-  { key: "morningSnack", label: "Morning snack" },
-  { key: "afternoonSnack", label: "Afternoon snack" },
-  { key: "eveningSnack", label: "Evening snack" },
-];
-
-/** Meal is required at write time — a defaulted "lunch" silently mislabels history. */
+/**
+ * Food goes through the shared picker.
+ *
+ * This file used to carry its own copy of the search, the quantity field and the
+ * new-food form, which had already drifted from Fuel's: a different meal order and a
+ * different macro field order, so the same fix had to be made twice. One widget now.
+ */
 function FoodForm({ date, onDone }: { date: string; onDone: () => void }) {
-  const foods = useLive<Food[]>(() => getFoods(), [], []);
   const [meal, setMeal] = useState<Meal>("lunch");
-  const [query, setQuery] = useState("");
-  const [qty, setQty] = useState("1");
-  const [nf, setNf] = useState({ name: "", unit: "serving", kcal: "", p: "", c: "", f: "" });
-
-  const matches = query
-    ? foods.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
-    : foods.slice(0, 8);
-
-  const log = async (f: Food) => {
-    const q = parseFloat(qty) || 1;
-    // Macros are copied, not referenced: editing this food later must not rewrite history.
-    await logEvent("food", {
-      name: f.name, qty: q, unit: f.unit, meal, at: localTime(), foodId: f.id,
-      kcal: Math.round(f.kcal * q),
-      p: +(f.protein_g * q).toFixed(1),
-      c: +(f.carbs_g * q).toFixed(1),
-      f: +(f.fat_g * q).toFixed(1),
-    }, { local_date: date });
-    bump();
-    onDone();
-  };
-
-  const addNew = async () => {
-    if (!nf.name.trim() || !nf.kcal) return;
-    const food = await saveFood({
-      id: uuid(), name: nf.name.trim(), unit: nf.unit || "serving",
-      kcal: parseFloat(nf.kcal) || 0,
-      protein_g: parseFloat(nf.p) || 0,
-      carbs_g: parseFloat(nf.c) || 0,
-      fat_g: parseFloat(nf.f) || 0,
-      deleted_at: null,
-    });
-    bump();
-    await log(food);
-  };
-
   return (
     <SubCard>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-        {MEALS.map((m) => (
-          <button
-            key={m.key} onClick={() => setMeal(m.key)}
-            style={{
-              border: "1px solid rgba(255,255,255,.12)", borderRadius: 10,
-              background: meal === m.key ? C.food : "rgba(255,255,255,.05)",
-              color: meal === m.key ? "#1F1708" : C.soft,
-              fontSize: 12, padding: "7px 10px", cursor: "pointer", minHeight: 34,
-            }}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          placeholder="Search your foods" value={query}
-          onChange={(e) => setQuery(e.target.value)} style={inputStyle}
-        />
-        <input
-          type="number" inputMode="decimal" step="0.25" value={qty}
-          onChange={(e) => setQty(e.target.value)} aria-label="Quantity"
-          style={{ ...inputStyle, width: 76, textAlign: "center", ...num }}
-        />
-      </div>
-
-      {matches.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          {matches.map((f) => (
-            <button
-              key={f.id} onClick={() => void log(f)}
-              style={{
-                display: "flex", width: "100%", alignItems: "center", gap: 8,
-                background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,.06)",
-                color: C.ink, padding: "10px 2px", cursor: "pointer", textAlign: "left",
-                minHeight: 44,
-              }}
-            >
-              <span style={{ fontSize: 13.5 }}>{f.name}</span>
-              <span style={{ fontSize: 11.5, color: C.faint }}>per {f.unit}</span>
-              <span style={{ marginLeft: "auto", fontSize: 12.5, color: C.food, ...num }}>
-                {Math.round(f.kcal * (parseFloat(qty) || 1))} kcal
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <details style={{ marginTop: 12 }}>
-        <summary style={{ fontSize: 12.5, color: C.soft, cursor: "pointer", minHeight: 32 }}>
-          New food
-        </summary>
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 8 }}>
-            Typed in once, then reused. No nutrition API by design — Nepali food is absent
-            from every free database and the same twenty items recur daily.
-          </div>
-          <input placeholder="Name" value={nf.name}
-            onChange={(e) => setNf({ ...nf, name: e.target.value })} style={inputStyle} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <input placeholder="Unit (plate, cup)" value={nf.unit}
-              onChange={(e) => setNf({ ...nf, unit: e.target.value })} style={inputStyle} />
-            <input placeholder="kcal" inputMode="decimal" value={nf.kcal}
-              onChange={(e) => setNf({ ...nf, kcal: e.target.value })} style={inputStyle} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
-            <input placeholder="Protein g" inputMode="decimal" value={nf.p}
-              onChange={(e) => setNf({ ...nf, p: e.target.value })} style={inputStyle} />
-            <input placeholder="Carbs g" inputMode="decimal" value={nf.c}
-              onChange={(e) => setNf({ ...nf, c: e.target.value })} style={inputStyle} />
-            <input placeholder="Fat g" inputMode="decimal" value={nf.f}
-              onChange={(e) => setNf({ ...nf, f: e.target.value })} style={inputStyle} />
-          </div>
-          <button style={{ ...cta(C.food, "#1F1708"), marginTop: 10 }} onClick={() => void addNew()}>
-            Save and log it
-          </button>
-        </div>
-      </details>
+      <FoodPicker meal={meal} onMeal={setMeal} date={date} onLogged={onDone} />
     </SubCard>
   );
 }

@@ -9,7 +9,7 @@
  * tidied view of it, and a deletion is part of the history.
  */
 
-import { allEventsRaw, getProfile, getFoods, getCategories } from "@/db/local";
+import { allEventsRaw, getProfile, getFoods, getSavedMeals, getCategories } from "@/db/local";
 
 export interface Export {
   app: "spiralout";
@@ -20,14 +20,16 @@ export interface Export {
   profile: unknown;
   events: unknown[];
   foods: unknown[];
+  saved_meals: unknown[];
   categories: unknown[];
 }
 
 export async function buildExport(): Promise<Export> {
-  const [events, profile, foods, expense, income] = await Promise.all([
+  const [events, profile, foods, savedMeals, expense, income] = await Promise.all([
     allEventsRaw(),
     getProfile(),
     getFoods(),
+    getSavedMeals(),
     getCategories("expense"),
     getCategories("income"),
   ]);
@@ -37,13 +39,14 @@ export async function buildExport(): Promise<Export> {
 
   return {
     app: "spiralout",
-    format: 1,
+    format: 2,
     exported_at: new Date().toISOString(),
     timezone: "Asia/Kathmandu",
     counts: { total: events.length, ...counts },
     profile,
     events,
     foods,
+    saved_meals: savedMeals,
     categories: [...expense, ...income],
   };
 }

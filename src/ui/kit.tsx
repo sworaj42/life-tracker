@@ -8,6 +8,7 @@
 import { type CSSProperties } from "react";
 import { C, num } from "./tokens";
 import { today, shiftDays } from "@/lib/date";
+import type { Meal } from "@/db/types";
 
 export const CARD: CSSProperties = {
   background: "rgba(255,255,255,.07)",
@@ -178,6 +179,75 @@ export function DateField({
         <rect x="3" y="5" width="18" height="16" rx="2" />
         <path d="M3 10h18M8 3v4M16 3v4" />
       </svg>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Food — shared by the Fuel tab, the meal page and the quick-log sheet
+// ---------------------------------------------------------------------------
+
+/**
+ * Breakfast, lunch and dinner have their own glyphs; the three snacks share one.
+ *
+ * Paths lifted from the prototype. They live here rather than in `lib/calc/calories.ts`
+ * because that file is pure arithmetic and must not grow a presentation layer.
+ */
+export const MEAL_ICON: Record<Meal, string> = {
+  breakfast: "M4 15h11c0 2.2-1.8 4-4 4H8c-2.2 0-4-1.8-4-4z M15 15h2.2a2.2 2.2 0 0 0 0-4.4H15 M7 8c0-1.2 1-1.6 1-2.6 M11 8c0-1.2 1-1.6 1-2.6",
+  lunch: "M3 15l6-6 3 3 3-3 6 6z M3 15h18",
+  dinner: "M4 12h11c0 2.6-2.1 4.6-4.6 4.6H8.6C6.1 16.6 4 14.6 4 12z M19 6v11 M17.4 6v3.4h3.2V6",
+  morningSnack: "M8.5 9.5c-1.6 0-3 1.6-3 4s1.8 5 3.4 5c.7 0 1.1-.3 1.6-.3s.9.3 1.6.3c1.6 0 3.4-2.6 3.4-5s-1.4-4-3-4c-.9 0-1.4.4-2 .4s-1.1-.4-2-.4z M11.5 8c0-1.6 1.2-2.8 2.6-2.8",
+  afternoonSnack: "M8.5 9.5c-1.6 0-3 1.6-3 4s1.8 5 3.4 5c.7 0 1.1-.3 1.6-.3s.9.3 1.6.3c1.6 0 3.4-2.6 3.4-5s-1.4-4-3-4c-.9 0-1.4.4-2 .4s-1.1-.4-2-.4z M11.5 8c0-1.6 1.2-2.8 2.6-2.8",
+  eveningSnack: "M8.5 9.5c-1.6 0-3 1.6-3 4s1.8 5 3.4 5c.7 0 1.1-.3 1.6-.3s.9.3 1.6.3c1.6 0 3.4-2.6 3.4-5s-1.4-4-3-4c-.9 0-1.4.4-2 .4s-1.1-.4-2-.4z M11.5 8c0-1.6 1.2-2.8 2.6-2.8",
+};
+
+/** The tile grid reads across the row: the three meals, then the three snacks. This is
+ *  the design's layout order and is deliberately NOT the chronological `MEALS` order. */
+export const MEAL_TILE_ORDER: Meal[] = [
+  "breakfast", "lunch", "dinner", "morningSnack", "afternoonSnack", "eveningSnack",
+];
+
+export function MealIcon({ meal, color, size = 24 }: { meal: Meal; color: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ display: "block" }}>
+      <path d={MEAL_ICON[meal]} fill="none" stroke={color} strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * A −/+ quantity stepper.
+ *
+ * Floored at `step` rather than 0: a quantity of nothing is not a portion, and the old
+ * free-text field let "0" through, where `parseFloat(qty) || 1` then logged it as one
+ * whole serving.
+ */
+export function Stepper({
+  value, onChange, step = 0.5, accent, format = (v) => String(v), label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  accent: string;
+  format?: (v: number) => string;
+  label?: string;
+}) {
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
+      <button onClick={() => onChange(round(Math.max(step, value - step)))}
+        aria-label={label ? `Less ${label}` : "Less"}
+        style={{ ...ghost(28, 8, accent), fontSize: 15 }}>−</button>
+      <span style={{
+        fontSize: 13, fontWeight: 600, minWidth: 30, textAlign: "center", ...num,
+      }}>
+        {format(value)}
+      </span>
+      <button onClick={() => onChange(round(value + step))}
+        aria-label={label ? `More ${label}` : "More"}
+        style={{ ...ghost(28, 8, accent), fontSize: 15 }}>+</button>
     </span>
   );
 }
