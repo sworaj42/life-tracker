@@ -434,6 +434,31 @@ export function Disclosure({
   );
 }
 
+/** An on/off switch, for a setting that is a fact rather than a choice between values. */
+export function Toggle({
+  on, onChange, accent, label,
+}: { on: boolean; onChange: (v: boolean) => void; accent: string; label: string }) {
+  return (
+    <button
+      role="switch" aria-checked={on} aria-label={label}
+      onClick={() => onChange(!on)}
+      style={{
+        width: 46, height: 28, borderRadius: 14, padding: 3, flex: "none",
+        border: `1px solid ${on ? accent : "rgba(255,255,255,.14)"}`,
+        background: on ? accent : "rgba(255,255,255,.06)",
+        cursor: "pointer", display: "flex", justifyContent: on ? "flex-end" : "flex-start",
+        alignItems: "center",
+      }}
+    >
+      <span style={{
+        width: 20, height: 20, borderRadius: "50%", display: "block",
+        background: on ? onAccent(accent) : C.soft,
+        transition: "background-color var(--t-ui) ease",
+      }} />
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Gestures
 // ---------------------------------------------------------------------------

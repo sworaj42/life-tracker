@@ -480,6 +480,25 @@ export async function setActiveSession(s: ActiveSession | null): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Device preferences
+//
+// These live in `kv` rather than in `profile`, so they are per DEVICE and never sync.
+// That is the point of the one that exists: whether the balance is covered up is a fact
+// about the room you are standing in, not about the account. Syncing it would also mean
+// a migration and a network round trip for something that has to respond instantly.
+// ---------------------------------------------------------------------------
+
+export async function getHideBalance(): Promise<boolean> {
+  const d = await db();
+  return ((await d.get("kv", "hide_balance")) as boolean | undefined) ?? false;
+}
+
+export async function setHideBalance(hidden: boolean): Promise<void> {
+  const d = await db();
+  await d.put("kv", hidden, "hide_balance");
+}
+
+// ---------------------------------------------------------------------------
 // Outbox
 // ---------------------------------------------------------------------------
 

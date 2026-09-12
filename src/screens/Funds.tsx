@@ -15,6 +15,7 @@
 import { useState } from "react";
 import {
   eventsOfKind, getProfile, saveProfile, logEvent, removeEvent,
+  getHideBalance, setHideBalance,
   getCategories, getCategoriesRaw, addCategory, renameCategory, hideCategory,
   countByCategory,
 } from "@/db/local";
@@ -34,12 +35,49 @@ import { Icon } from "@/ui/icons";
 import { BarChart, LineChart } from "@/ui/charts";
 
 const ACCENT = "#6FC29A";
+
+/**
+ * What stands in for the balance while it is covered.
+ *
+ * The dots are DRAWN, not typed. Instrument Sans renders U+2022 as a small square, so
+ * `"Rs ••••••"` came out as a row of blocks rather than the round dots this gesture is
+ * borrowed from — the same reason none of the app's icons are text characters.
+ *
+ * It occupies about the width of a five-figure rupee sum and exactly its height, so the
+ * card does not resize when you tap the eye. A tile that jumps as you cover it
+ * advertises the very thing you were covering.
+ */
+function Masked({ size, label = "Balance hidden" }: { size: number; label?: string }) {
+  const dot = Math.max(6, Math.round(size * 0.3));
+  return (
+    <span aria-label={label} role="img"
+      style={{ display: "inline-flex", alignItems: "center", gap: dot, height: size }}>
+      <span style={{
+        fontSize: size, fontWeight: 600, lineHeight: 1, color: C.faint,
+        letterSpacing: "-0.01em",
+      }}>
+        Rs
+      </span>
+      <span style={{ display: "inline-flex", gap: dot * 0.55 }}>
+        {Array.from({ length: 5 }, (_, i) => (
+          <span key={i} style={{
+            width: dot, height: dot, borderRadius: "50%", background: C.faint, display: "block",
+          }} />
+        ))}
+      </span>
+    </span>
+  );
+}
 const ON_ACCENT = "#0F1A14";
 
 
 export function Funds() {
   const [page, setPage] = useState<"tab" | "balance">("tab");
   const profile = useLive<Profile>(() => getProfile(), [], DEFAULT_PROFILE);
+  // Device-local, not part of the profile: covering the balance is about the room you
+  // are standing in, not about the account. See `getHideBalance`.
+  const hidden = useLive<boolean>(() => getHideBalance(), [], false);
+  const toggleHidden = async () => { await setHideBalance(!hidden); bump(); };
   const events = useLive<AnyEvent[]>(
     () => Promise.all([eventsOfKind("expense"), eventsOfKind("income")]).then((r) => r.flat()),
     [], [],
@@ -49,16 +87,25 @@ export function Funds() {
   const bal = balance(txns, profile.balance_opening);
 
   if (page === "balance") {
-    return <BalancePage txns={txns} bal={bal} onBack={() => setPage("tab")} />;
+    return (
+      <BalancePage txns={txns} bal={bal} hidden={hidden} onReveal={toggleHidden}
+        onBack={() => setPage("tab")} />
+    );
   }
-  return <BudgetTab profile={profile} txns={txns} bal={bal} onBalance={() => setPage("balance")} />;
+  return (
+    <BudgetTab profile={profile} txns={txns} bal={bal} hidden={hidden}
+      onHide={toggleHidden} onBalance={() => setPage("balance")} />
+  );
 }
 
 // ---------------------------------------------------------------------------
 
 function BudgetTab({
-  profile, txns, bal, onBalance,
-}: { profile: Profile; txns: Txn[]; bal: number; onBalance: () => void }) {
+  profile, txns, bal, hidden, onHide, onBalance,
+}: {
+  profile: Profile; txns: Txn[]; bal: number;
+  hidden: boolean; onHide: () => void; onBalance: () => void;
+}) {
   const t = today();
   const b = budget(txns, profile.weekly_budget, t);
   const r = runway(bal, txns, t);
@@ -69,7 +116,8 @@ function BudgetTab({
         display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
         gap: 10, marginBottom: 10,
       }}>
-        <BalanceTile bal={bal} runway={r} onAdd={onBalance} opening={profile.balance_opening} />
+        <BalanceTile bal={bal} runway={r} onAdd={onBalance} opening={profile.balance_opening}
+          hidden={hidden} onHide={onHide} />
         <div style={SUB}>
           <FieldLabel style={{ marginBottom: 8 }}>Spent</FieldLabel>
           <SpentRow label="Today" value={spentOn(txns, t)} first />
@@ -106,8 +154,11 @@ function SpentRow({ label, value, first }: { label: string; value: number; first
  * find later, rather than a number that silently changed underneath the history.
  */
 function BalanceTile({
-  bal, runway: r, onAdd, opening,
-}: { bal: number; runway: ReturnType<typeof runway>; onAdd: () => void; opening: number }) {
+  bal, runway: r, onAdd, opening, hidden, onHide,
+}: {
+  bal: number; runway: ReturnType<typeof runway>; onAdd: () => void; opening: number;
+  hidden: boolean; onHide: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -134,15 +185,27 @@ function BalanceTile({
         display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6,
       }}>
         <FieldLabel>Balance</FieldLabel>
-        <button onClick={onAdd} aria-label="Open balance" style={{
-          width: 26, height: 26, borderRadius: 8, border: "1px solid rgba(255,255,255,.12)",
-          background: "rgba(255,255,255,.07)", color: ACCENT, fontSize: 15, lineHeight: 1,
-          cursor: "pointer", display: "grid", placeItems: "center", padding: 0,
-        }}>
-          +
-        </button>
+        <span style={{ display: "flex", gap: 6 }}>
+          <button onClick={onHide} aria-label={hidden ? "Show balance" : "Hide balance"}
+            aria-pressed={hidden}
+            style={{ ...ghost(26, 8, hidden ? ACCENT : C.faint), border: "none", background: "none" }}>
+            <Icon name={hidden ? "eyeOff" : "eye"} size={16} strokeWidth={1.7} />
+          </button>
+          <button onClick={onAdd} aria-label="Open balance" style={ghost(26, 8, ACCENT)}>
+            <Icon name="plus" size={14} strokeWidth={2.2} />
+          </button>
+        </span>
       </div>
-      {editing ? (
+      {/* Covered, the figure is not a control at all. Leaving it tappable would open an
+          edit field with the number in it, which is the one thing the cover is for. */}
+      {hidden ? (
+        <>
+          <div style={{ height: 26, display: "flex", alignItems: "center" }}>
+            <Masked size={26} />
+          </div>
+          <div style={{ fontSize: 11.5, marginTop: 8, color: C.faint }}>Hidden</div>
+        </>
+      ) : editing ? (
         <>
           <input autoFocus inputMode="numeric" defaultValue={String(Math.round(bal))}
             onChange={(e) => setDraft(e.target.value)}
@@ -711,8 +774,10 @@ function Spending({ txns }: { txns: Txn[] }) {
 // ---------------------------------------------------------------------------
 
 function BalancePage({
-  txns, bal, onBack,
-}: { txns: Txn[]; bal: number; onBack: () => void }) {
+  txns, bal, hidden, onReveal, onBack,
+}: {
+  txns: Txn[]; bal: number; hidden: boolean; onReveal: () => void; onBack: () => void;
+}) {
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
   const [cat, setCat] = useState(DEFAULT_INCOME_CATS[0]);
@@ -741,8 +806,19 @@ function BalancePage({
       <PageHead
         title="Balance" back={onBack} backLabel="Funds" accent={ACCENT}
         right={
-          <span style={{ fontSize: 22, fontWeight: 600, color: ACCENT, lineHeight: 1.1, ...num }}>
-            {rs(bal)}
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {hidden ? <Masked size={21} /> : (
+              <span style={{
+                fontSize: 22, fontWeight: 600, lineHeight: 1.1, color: ACCENT, ...num,
+              }}>
+                {rs(bal)}
+              </span>
+            )}
+            <button onClick={onReveal} aria-label={hidden ? "Show balance" : "Hide balance"}
+              aria-pressed={hidden}
+              style={{ ...ghost(28, 9, hidden ? ACCENT : C.faint), border: "none", background: "none" }}>
+              <Icon name={hidden ? "eyeOff" : "eye"} size={17} strokeWidth={1.7} />
+            </button>
           </span>
         }
       />
@@ -798,17 +874,28 @@ function BalancePage({
           <Segmented value={scope} options={["week", "month", "year"] as const}
             onChange={setScope} accent={ACCENT} />
         </div>
-        <LineChart
-          points={series.map((s) => ({ label: s.date.slice(5), value: s.value }))}
-          color={ACCENT}
-          format={(v) => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v)))}
-          height={140}
-          xLabels
-        />
-        <div style={caption}>
-          Ran between {rs(lo)} and {rs(hi)} over the last{" "}
-          {scope === "week" ? "7 days" : scope === "month" ? "30 days" : "year"}.
-        </div>
+        {hidden ? (
+          <div style={{
+            height: 140, display: "grid", placeItems: "center", textAlign: "center",
+            fontSize: 12.5, color: C.faint, lineHeight: 1.6, padding: "0 16px",
+          }}>
+            The graph is covered too — its axis is the balance, so showing it would say
+            the number out loud.
+          </div>
+        ) : (
+          <>
+            <LineChart
+              points={series.map((s) => ({ label: s.date.slice(5), value: s.value }))}
+              color={ACCENT}
+              height={140}
+              xLabels
+            />
+            <div style={caption}>
+              Ran between {rs(lo)} and {rs(hi)} over the last{" "}
+              {scope === "week" ? "7 days" : scope === "month" ? "30 days" : "year"}.
+            </div>
+          </>
+        )}
       </section>
     </div>
   );

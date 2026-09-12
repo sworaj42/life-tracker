@@ -28,7 +28,7 @@ export type IconName =
   | "chevronLeft" | "chevronRight" | "chevronDown"
   | "plus" | "minus" | "close" | "check"
   | "gear" | "calendar" | "search" | "scan" | "file" | "clock" | "trash"
-  | "drop" | "superset";
+  | "drop" | "superset" | "eye" | "eyeOff";
 
 interface Props {
   name: IconName;
@@ -171,6 +171,22 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="8.4" />
       <path d="M12 7.4V12l3 1.8" />
+    </>
+  ),
+
+  eye: (
+    <>
+      <path d="M2.4 12S6 5.4 12 5.4 21.6 12 21.6 12 18 18.6 12 18.6 2.4 12 2.4 12z" />
+      <circle cx="12" cy="12" r="3.1" />
+    </>
+  ),
+
+  /** The same eye with a stroke through it, so the pair reads as one control. */
+  eyeOff: (
+    <>
+      <path d="M9.9 5.7A8.9 8.9 0 0 1 12 5.4c6 0 9.6 6.6 9.6 6.6a17 17 0 0 1-2.7 3.6M6.4 7.3A17 17 0 0 0 2.4 12S6 18.6 12 18.6a8.8 8.8 0 0 0 3.5-.7" />
+      <path d="M10 10a3.1 3.1 0 0 0 4.2 4.2" />
+      <path d="m3.6 3.6 16.8 16.8" />
     </>
   ),
 

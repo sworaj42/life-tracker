@@ -18,7 +18,9 @@
  */
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { getProfile, saveProfile, allEventsRaw, outboxCount } from "@/db/local";
+import {
+  getProfile, saveProfile, allEventsRaw, outboxCount, getHideBalance, setHideBalance,
+} from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type Profile } from "@/db/types";
 import { supabase, hasSupabase } from "@/lib/supabase";
@@ -29,7 +31,7 @@ import { maintenance, targets } from "@/lib/calc/calories";
 import { today } from "@/lib/date";
 import { C, H, num } from "@/ui/tokens";
 import {
-  CARD, INPUT, Eyebrow, PageHead, SectionTitle, cta, ghostBtn, chip, caption, RULE,
+  CARD, INPUT, Eyebrow, PageHead, SectionTitle, Toggle, cta, ghostBtn, chip, caption, RULE,
 } from "@/ui/kit";
 import { DateField } from "@/ui/kit";
 
@@ -39,6 +41,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const profile = useLive<Profile>(() => getProfile(), [], DEFAULT_PROFILE);
   const events = useLive(() => allEventsRaw(), [], []);
   const pending = useLive(() => outboxCount(), [], 0);
+  const hideBalance = useLive<boolean>(() => getHideBalance(), [], false);
 
   const set = async (patch: Partial<Profile>) => {
     await saveProfile(patch);
@@ -180,9 +183,17 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Num value={profile.weekly_budget} suffix="Rs" step={500}
             onSave={(v) => set({ weekly_budget: Math.round(v) })} />
         </Row>
-        <Row label="Opening balance" hint="Balance = opening + income − spending" last>
+        <Row label="Opening balance" hint="Balance = opening + income − spending">
           <Num value={profile.balance_opening} suffix="Rs" step={100}
             onSave={(v) => set({ balance_opening: Math.round(v) })} />
+        </Row>
+        {/* This one is per device, not per account — the eye on the Funds tab flips the
+            same switch. Kept here so it is findable without knowing the eye is there. */}
+        <Row label="Hide balance"
+          hint="Covers the figure and its graph on this device. The eye on Funds does the same."
+          last>
+          <Toggle on={hideBalance} accent={ACCENT} label="Hide balance"
+            onChange={(v) => { void setHideBalance(v).then(bump); }} />
         </Row>
       </section>
 
