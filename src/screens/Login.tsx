@@ -28,7 +28,8 @@ export function Login() {
       background: "radial-gradient(120% 80% at 50% 30%, #241A52 0%, #1A1140 46%, #120C2C 100%)",
     }}>
       <form onSubmit={submit} style={{ width: "100%", maxWidth: 320, textAlign: "center" }}>
-        <img src="/icon-192.png" alt="" width={80} height={80} style={{ mixBlendMode: "screen" }} />
+        <img src="/icon-192.png" alt="" width={84} height={84}
+          style={{ mixBlendMode: "screen", borderRadius: "50%" }} />
         <div style={{
           margin: "14px 0 28px", fontSize: 18, fontWeight: 500,
           letterSpacing: ".34em", textIndent: ".34em", color: "#F2EEFC",

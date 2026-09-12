@@ -681,7 +681,6 @@ function Spending({ txns }: { txns: Txn[] }) {
           points={series.map((d) => ({ label: d.date.slice(5), value: d.amount }))}
           color={ACCENT}
           average={avg}
-          format={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(Math.round(v)))}
         />
         <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
           dashed line is the average

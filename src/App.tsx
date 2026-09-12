@@ -253,7 +253,10 @@ function Splash() {
       {show && (
         <div style={{ textAlign: "center" }}>
           <img src="/icon-192.png" alt="" width={96} height={96}
-            style={{ mixBlendMode: "screen", animation: "rise .9s ease both" }} />
+            style={{
+              mixBlendMode: "screen", borderRadius: "50%",
+              animation: "rise .9s ease both",
+            }} />
           <div style={{
             marginTop: 18, fontSize: 20, fontWeight: 500, letterSpacing: ".34em",
             textIndent: ".34em", color: "#F2EEFC",
