@@ -397,7 +397,6 @@ function DidCard() {
         at: p.end ? `${at}–${p.end}` : at,
         text: p.text,
         sub: p.end && at ? shortDur(dur(at, p.end)) : "",
-        removable: true,
         // What the editor opens with: the description, and the times as two clocks.
         draft: { text: p.text, start: at, end: p.end ?? "" },
       };
@@ -415,7 +414,6 @@ function DidCard() {
         // What you got done if you said, otherwise what you set out to do.
         text: p.note || p.focus || p.skill || p.track,
         sub: `${p.track}${p.skill ? ` · ${p.skill}` : ""} · ${shortDur(p.mins)}`,
-        removable: false,
         // A session's description is its note — the line it already shows when set.
         // Editing writes there, never over the focus you set before starting.
         draft: { text: p.note ?? "", start: p.start, end: p.end },
@@ -566,7 +564,6 @@ type Row = {
   at: string;
   text: string;
   sub: string;
-  removable: boolean;
   draft: Draft;
 };
 
@@ -605,15 +602,16 @@ function LogRow({
           </span>
         )}
       </span>
-      {row.removable && (
-        <button onClick={onRemove} aria-label="Remove"
-          style={{
-            border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-            fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
-          }}>
-          ×
-        </button>
-      )}
+      {/* Every row, typed or tracked. A log you cannot delete a line from is a log you
+          stop trusting, and a session logged by mistake was the one row you could not
+          take back from here. */}
+      <button onClick={onRemove} aria-label={`Remove ${row.text}`}
+        style={{
+          border: "none", background: "transparent", color: C.faint, cursor: "pointer",
+          fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
+        }}>
+        ×
+      </button>
     </div>
   );
 }
