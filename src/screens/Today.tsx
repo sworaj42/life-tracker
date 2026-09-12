@@ -11,7 +11,8 @@
 
 import { useState } from "react";
 import {
-  eventsOfKindOnDate, eventsOfKind, getProfile, logEvent, removeEvent, replaceOnDate,
+  eventsOfKindOnDate, eventsOfKind, getProfile, logEvent, patchEvent, removeEvent,
+  replaceOnDate,
 } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, ASLEEP, type AnyEvent, type Profile, type SleepValue } from "@/db/types";
@@ -20,7 +21,7 @@ import { waterDay } from "@/lib/calc/water";
 import { coffeeDay } from "@/lib/calc/coffee";
 import { weightStats } from "@/lib/calc/weight";
 import { C, STAGE, num } from "@/ui/tokens";
-import { CARD, TILE, INPUT, ghost, TitleLink, DayStrip } from "@/ui/kit";
+import { CARD, TILE, INPUT, ghost, TitleLink, DayStrip, useHold } from "@/ui/kit";
 import { SleepPage } from "./detail/SleepPage";
 import { WeightPage } from "./detail/WeightPage";
 import { WaterPage } from "./detail/WaterPage";
@@ -353,11 +354,11 @@ function CoffeeRow({ label, value, color }: { label: string; value: string; colo
 
 // ---------------------------------------------------------------------------
 
-/** The two clock boxes under the activity field. Narrow enough to sit side by side on a
- *  phone; `colorScheme: dark` keeps the native picker from rendering white-on-white. */
-const TIME_BOX: React.CSSProperties = {
-  ...INPUT, width: 104, minHeight: 38, padding: "8px 10px", fontSize: 13,
-  colorScheme: "dark", ...num,
+/** One half of the range control. The border, background and focus ring belong to the box
+ *  around the pair (`.range-field` in index.css), so each input is just its digits. */
+const TIME_HALF: React.CSSProperties = {
+  border: "none", background: "transparent", outline: "none", padding: 0,
+  width: "100%", minWidth: 0, textAlign: "center", fontSize: 14, color: C.ink, ...num,
 };
 
 /**
@@ -368,7 +369,12 @@ const TIME_BOX: React.CSSProperties = {
  * place for "what did I actually get done" into a firehose (AUDIT C1).
  *
  * Sessions appear here rather than being copied into a second event: one row, one place
- * it is written, and editing the session on Quests changes what shows here.
+ * it is written, so a session edited on either screen reads the same on both.
+ *
+ * Every row is editable where it is read. Holding one swaps it for the same two fields
+ * the add form has — the description and the pair of clocks — because the log is where
+ * you notice a wrong time, and sending you to another screen to fix it is how a log ends
+ * up full of times nobody corrected.
  */
 function DidCard() {
   const [date, setDate] = useState(today());
@@ -377,18 +383,23 @@ function DidCard() {
   const [text, setText] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  // The row being edited, if any. One at a time — a second hold moves the editor.
+  const [editing, setEditing] = useState<string | null>(null);
 
-  const rows = [
+  const rows: Row[] = [
     ...typed.map((e) => {
       const p = e.payload as { text: string; at?: string; end?: string };
       const at = p.at ?? "";
       return {
         id: e.id,
+        kind: "did" as const,
         sort: at,
         at: p.end ? `${at}–${p.end}` : at,
         text: p.text,
         sub: p.end && at ? shortDur(dur(at, p.end)) : "",
         removable: true,
+        // What the editor opens with: the description, and the times as two clocks.
+        draft: { text: p.text, start: at, end: p.end ?? "" },
       };
     }),
     ...work.map((e) => {
@@ -398,12 +409,16 @@ function DidCard() {
       };
       return {
         id: e.id,
+        kind: "work" as const,
         sort: p.start,
         at: `${p.start}–${p.end}`,
         // What you got done if you said, otherwise what you set out to do.
         text: p.note || p.focus || p.skill || p.track,
         sub: `${p.track}${p.skill ? ` · ${p.skill}` : ""} · ${shortDur(p.mins)}`,
         removable: false,
+        // A session's description is its note — the line it already shows when set.
+        // Editing writes there, never over the focus you set before starting.
+        draft: { text: p.note ?? "", start: p.start, end: p.end },
       };
     }),
   ].sort((a, b) => a.sort.localeCompare(b.sort));
@@ -429,6 +444,34 @@ function DidCard() {
     bump();
   };
 
+  /**
+   * Commit an edit.
+   *
+   * The times follow the same rule as adding one: a lone clock is when it happened, and
+   * only two different clocks make a range. A session is the exception — it is a span by
+   * construction, so both ends stay required and `mins` is recomputed rather than left
+   * to disagree with the times now shown beside it.
+   */
+  const saveRow = async (row: Row, d: Draft) => {
+    const t = d.text.trim();
+    if (row.kind === "did") {
+      if (!t) return; // an activity with no description is nothing at all
+      const at = d.start || d.end || row.draft.start || localTime();
+      const range = d.start && d.end && d.start !== d.end;
+      await patchEvent(row.id, (p) => ({
+        ...p, text: t, at, end: range ? d.end : undefined,
+      }));
+    } else {
+      const st = d.start || row.draft.start;
+      const en = d.end || row.draft.end;
+      await patchEvent(row.id, (p) => ({
+        ...p, note: t || undefined, start: st, end: en, mins: dur(st, en),
+      }));
+    }
+    setEditing(null);
+    bump();
+  };
+
   return (
     <section style={CARD}>
       <div style={{
@@ -439,76 +482,65 @@ function DidCard() {
         <DayStrip date={date} onChange={setDate} compact />
       </div>
 
-      <div style={{
-        display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, marginBottom: 4,
-      }}>
+      {/*
+        Two rows with nothing spare in either: the activity takes the full width, and
+        beneath it the range control runs to the button that submits them both. The two
+        clocks share one box rather than sitting in two mostly empty ones, and they need
+        no caption — `--:--` says optional by itself.
+      */}
+      <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void add()}
           placeholder="Went to visit grandmom" style={INPUT} />
-        <button onClick={() => void add()} aria-label="Add" style={{
-          width: 44, height: 42, borderRadius: 11, border: "none", background: "#8FB6E8",
-          color: "#0E1626", fontSize: 18, lineHeight: 1, cursor: "pointer",
-          display: "grid", placeItems: "center", padding: 0,
-        }}>
-          +
-        </button>
-      </div>
 
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4,
-      }}>
-        <input type="time" value={start} aria-label="Started at"
-          onChange={(e) => setStart(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void add()}
-          style={TIME_BOX} />
-        <span style={{ fontSize: 12, color: C.faint }}>–</span>
-        <input type="time" value={end} aria-label="Ended at"
-          onChange={(e) => setEnd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void add()}
-          style={TIME_BOX} />
-        <span style={{ fontSize: 11.5, color: C.faint }}>
-          {start ? "when it ran" : "optional — blank logs it at the time you add it"}
-        </span>
-      </div>
-
-      {rows.map((r) => (
-        <div key={r.id} style={{
-          display: "flex", gap: 10, padding: "9px 0",
-          borderTop: "1px solid rgba(255,255,255,.08)",
+        <div style={{
+          display: "grid", gridTemplateColumns: "minmax(0,1fr) 104px", gap: 8,
         }}>
-          <span style={{
-            fontSize: 11.5, color: C.skill, flex: "none", width: 96, paddingTop: 1, ...num,
+          <div className="range-field" style={{
+            ...INPUT, display: "flex", alignItems: "center", gap: 4,
+            height: 42, padding: "0 8px",
           }}>
-            {r.at}
-          </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 13, color: C.ink, lineHeight: 1.45 }}>
-              {r.text}
-            </span>
-            {r.sub && (
-              <span style={{
-                display: "block", fontSize: 11.5, color: C.faint, marginTop: 2,
-                textTransform: "capitalize", ...num,
-              }}>
-                {r.sub}
-              </span>
-            )}
-          </span>
-          {r.removable && (
-            <button onClick={async () => { await removeEvent(r.id); bump(); }} aria-label="Remove"
-              style={{
-                border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-                fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
-              }}>
-              ×
-            </button>
-          )}
+            <input type="time" value={start} aria-label="Started at"
+              onChange={(e) => setStart(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void add()}
+              style={TIME_HALF} />
+            <span style={{ fontSize: 13, color: C.faint, flex: "none" }}>–</span>
+            <input type="time" value={end} aria-label="Ended at"
+              onChange={(e) => setEnd(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void add()}
+              style={TIME_HALF} />
+          </div>
+          <button onClick={() => void add()} style={{
+            height: 42, borderRadius: 11, border: "none", background: "#8FB6E8",
+            color: "#0E1626", fontSize: 14, fontWeight: 600, lineHeight: 1,
+            cursor: "pointer", padding: 0,
+          }}>
+            Add
+          </button>
         </div>
-      ))}
+      </div>
 
-      {tracked > 0 && (
-        <div style={{ fontSize: 11.5, color: C.faint, paddingTop: 8, ...num }}>
-          {shortDur(tracked)} of tracked sessions
+      {rows.map((r) =>
+        editing === r.id ? (
+          <RowEditor
+            key={r.id} row={r}
+            onSave={(d) => void saveRow(r, d)}
+            onCancel={() => setEditing(null)}
+            onDelete={async () => { await removeEvent(r.id); setEditing(null); bump(); }}
+          />
+        ) : (
+          <LogRow key={r.id} row={r} onHold={() => setEditing(r.id)}
+            onRemove={async () => { await removeEvent(r.id); bump(); }} />
+        ),
+      )}
+
+      {rows.length > 0 && (
+        <div style={{
+          display: "flex", justifyContent: "space-between", gap: 10,
+          fontSize: 11.5, color: C.faint, paddingTop: 8, ...num,
+        }}>
+          <span>{tracked > 0 ? `${shortDur(tracked)} of tracked sessions` : ""}</span>
+          <span>Hold a row to edit it</span>
         </div>
       )}
 
@@ -518,6 +550,137 @@ function DidCard() {
         </div>
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** What the editor writes back. */
+type Draft = { text: string; start: string; end: string };
+
+/** One line of the log — either typed here, or a session tracked on Quests. */
+type Row = {
+  id: string;
+  kind: "did" | "work";
+  sort: string;
+  at: string;
+  text: string;
+  sub: string;
+  removable: boolean;
+  draft: Draft;
+};
+
+/**
+ * A logged row.
+ *
+ * Hold it to edit. There is no pencil: the row is a line of text on a narrow card, and a
+ * third control beside the time and the × would cost more width than the log has. The
+ * hold is the same gesture that renames a category on Funds.
+ */
+function LogRow({
+  row, onHold, onRemove,
+}: { row: Row; onHold: () => void; onRemove: () => void }) {
+  const hold = useHold(onHold);
+
+  return (
+    <div {...hold.bind} title="Hold to edit" style={{
+      display: "flex", gap: 10, padding: "9px 0",
+      borderTop: "1px solid rgba(255,255,255,.08)", ...hold.style,
+    }}>
+      <span style={{
+        fontSize: 11.5, color: C.skill, flex: "none", width: 96, paddingTop: 1, ...num,
+      }}>
+        {row.at}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13, color: C.ink, lineHeight: 1.45 }}>
+          {row.text}
+        </span>
+        {row.sub && (
+          <span style={{
+            display: "block", fontSize: 11.5, color: C.faint, marginTop: 2,
+            textTransform: "capitalize", ...num,
+          }}>
+            {row.sub}
+          </span>
+        )}
+      </span>
+      {row.removable && (
+        <button onClick={onRemove} aria-label="Remove"
+          style={{
+            border: "none", background: "transparent", color: C.faint, cursor: "pointer",
+            fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
+          }}>
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The row, opened for editing in place.
+ *
+ * Same two rows as the add form above it — description, then the shared clock box — so
+ * the thing you edit looks like the thing you typed. It replaces the row rather than
+ * appearing beneath it: a log of six lines has no room for a panel that pushes the rest
+ * off the screen, and editing in place keeps the entry where your thumb already is.
+ */
+function RowEditor({
+  row, onSave, onCancel, onDelete,
+}: { row: Row; onSave: (d: Draft) => void; onCancel: () => void; onDelete: () => void }) {
+  const [d, setD] = useState<Draft>(row.draft);
+  const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") onSave(d);
+    if (e.key === "Escape") onCancel();
+  };
+
+  return (
+    <div style={{
+      display: "grid", gap: 8, padding: "10px 0",
+      borderTop: "1px solid rgba(255,255,255,.08)",
+    }}>
+      <input
+        value={d.text} autoFocus onChange={(e) => set({ text: e.target.value })}
+        onKeyDown={keys} aria-label="What you did"
+        // A session with no note of its own falls back to what it is; say so rather
+        // than showing an empty box that looks like the description was lost.
+        placeholder={row.kind === "work" ? row.text : "What you did"}
+        style={INPUT} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 8 }}>
+        <div className="range-field" style={{
+          ...INPUT, display: "flex", alignItems: "center", gap: 4, height: 42, padding: "0 8px",
+        }}>
+          <input type="time" value={d.start} aria-label="Started at"
+            onChange={(e) => set({ start: e.target.value })} onKeyDown={keys} style={TIME_HALF} />
+          <span style={{ fontSize: 13, color: C.faint, flex: "none" }}>–</span>
+          <input type="time" value={d.end} aria-label="Ended at"
+            onChange={(e) => set({ end: e.target.value })} onKeyDown={keys} style={TIME_HALF} />
+        </div>
+        <button onClick={() => onSave(d)} style={{
+          height: 42, padding: "0 16px", borderRadius: 11, border: "none", background: "#8FB6E8",
+          color: "#0E1626", fontSize: 14, fontWeight: 600, lineHeight: 1, cursor: "pointer",
+        }}>
+          Save
+        </button>
+        <button onClick={onCancel} aria-label="Cancel" style={{
+          width: 42, height: 42, borderRadius: 11, border: "1px solid rgba(255,255,255,.14)",
+          background: "rgba(255,255,255,.05)", color: C.soft, fontSize: 15, cursor: "pointer",
+          padding: 0,
+        }}>
+          ×
+        </button>
+      </div>
+
+      <button onClick={onDelete} style={{
+        justifySelf: "start", border: "none", background: "transparent", color: C.red,
+        fontSize: 12, cursor: "pointer", padding: "2px 0",
+      }}>
+        Delete
+      </button>
+    </div>
   );
 }
 

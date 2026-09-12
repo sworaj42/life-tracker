@@ -34,6 +34,15 @@ input:focus, button:focus-visible, select:focus, textarea:focus {
 /* Never show a focus ring for a plain tap on touch. */
 button:focus:not(:focus-visible) { outline: none; }
 
+/*
+  A time range is two inputs wearing one box, so the box takes the focus ring and the
+  native clock buttons go: two of them inside a single field read as clutter, and the
+  field is its own affordance — tapping it still opens the picker on every platform.
+*/
+.range-field input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+.range-field input:focus { outline: none; }
+.range-field:focus-within { outline: 2px solid #8FB6E8; outline-offset: 2px; }
+
 @keyframes drip {
   0%   { transform: translateY(0); opacity: 0; }
   15%  { opacity: 1; }

@@ -5,7 +5,7 @@
  * appears eleven times there, each with its own copy of the same three handlers.
  */
 
-import { type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { C, num } from "./tokens";
 import { today, shiftDays } from "@/lib/date";
 import type { Meal } from "@/db/types";
@@ -46,6 +46,50 @@ export const ghost = (size: number, radius: number, color: string = C.ink): CSSP
   color, fontSize: 18, lineHeight: 1, cursor: "pointer",
   display: "grid", placeItems: "center", padding: 0,
 });
+
+/**
+ * A long press, for the second thing an element can do.
+ *
+ * 450ms, cancelled by lifting early or by the scroll that fires pointercancel. `held` is
+ * returned so the click that follows can be swallowed: on touch, a press that ran long
+ * still fires one, and without this a hold would also trigger the element's tap action.
+ *
+ * The context menu is suppressed by the caller spreading `bind`, because a long press on
+ * touch is exactly what raises it.
+ */
+export function useHold(onHold: () => void, ms = 450) {
+  const timer = useRef<number | null>(null);
+  const held = useRef(false);
+
+  const cancel = () => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  // A row unmounted mid-hold (the editor replacing it, say) must not fire afterwards.
+  useEffect(() => cancel, []);
+
+  return {
+    held,
+    bind: {
+      onPointerDown: () => {
+        held.current = false;
+        cancel();
+        timer.current = window.setTimeout(() => {
+          held.current = true;
+          onHold();
+        }, ms);
+      },
+      onPointerUp: cancel,
+      onPointerLeave: cancel,
+      onPointerCancel: cancel,
+      onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+    },
+    /** Kills the iOS callout and the blue selection a hold otherwise produces. */
+    style: {
+      WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none",
+    } as CSSProperties,
+  };
+}
 
 /** The chevron sits inline beside the title in the module's accent, not out at the edge. */
 export function Chevron({ color }: { color: string }) {

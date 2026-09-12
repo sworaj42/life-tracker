@@ -12,7 +12,7 @@
  *   - A receipt chip renders only when a receipt actually exists.
  */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   eventsOfKind, getProfile, saveProfile, logEvent, removeEvent, patchEvent,
   getCategories, getCategoriesRaw, addCategory, renameCategory, hideCategory,
@@ -27,7 +27,7 @@ import {
   DEFAULT_EXPENSE_CATS, DEFAULT_INCOME_CATS, rs, type Txn,
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip, DateField } from "@/ui/kit";
+import { CARD, INPUT, DayStrip, DateField, useHold } from "@/ui/kit";
 import { BarChart } from "@/ui/charts";
 
 const ACCENT = "#6FC29A";
@@ -412,42 +412,24 @@ function CategoryPicker({
 /**
  * A chip that reports a long press.
  *
- * 450ms, cancelled by moving or lifting early. The click is suppressed afterwards so
- * holding a chip does not also select it.
+ * The click that follows a hold is suppressed, so holding a chip does not also select it.
  */
 function Chip({
   name, selected, onPick, onHold,
 }: { name: string; selected: boolean; onPick: () => void; onHold: () => void }) {
-  const timer = useRef<number | null>(null);
-  const held = useRef(false);
-
-  const startHold = () => {
-    held.current = false;
-    timer.current = window.setTimeout(() => {
-      held.current = true;
-      onHold();
-    }, 450);
-  };
-  const cancel = () => {
-    if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
+  const hold = useHold(onHold);
 
   return (
     <button
-      onPointerDown={startHold}
-      onPointerUp={cancel}
-      onPointerLeave={cancel}
-      onPointerCancel={cancel}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={() => { if (!held.current) onPick(); }}
+      {...hold.bind}
+      onClick={() => { if (!hold.held.current) onPick(); }}
       style={{
         border: `1px solid ${selected ? ACCENT : "rgba(255,255,255,.1)"}`,
         borderRadius: 10,
         background: selected ? ACCENT : "rgba(255,255,255,.05)",
         color: selected ? ON_ACCENT : C.ink,
         fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
-        WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none",
+        ...hold.style,
       }}>
       {name}
     </button>
