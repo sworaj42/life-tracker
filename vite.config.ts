@@ -7,6 +7,23 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        /*
+          React and the Supabase client are four fifths of the bundle and change only
+          when they are upgraded. Splitting them out means an ordinary code change
+          invalidates ~80 KB rather than ~580 KB — which matters here, because the
+          service worker re-downloads whatever changed on every deploy, and it does it
+          over Kathmandu mobile data.
+        */
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-dom/client"],
+          supabase: ["@supabase/supabase-js"],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

@@ -11,12 +11,15 @@
  */
 import { createClient } from "@supabase/supabase-js";
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+// Trimmed, because a variable set to an empty string in a `.env` file arrives as `""`,
+// not `undefined` — and `??` would hand that straight to `createClient`, which throws
+// "supabaseUrl is required." at module scope and leaves a white screen with no app at all.
+const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+const key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim();
 
 export const hasSupabase = Boolean(url && key);
 
-export const supabase = createClient(url ?? "http://localhost", key ?? "public-anon-key", {
+export const supabase = createClient(url || "http://localhost", key || "public-anon-key", {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

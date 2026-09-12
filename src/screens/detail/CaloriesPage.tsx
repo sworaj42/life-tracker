@@ -15,22 +15,11 @@ import { shiftDays, today } from "@/lib/date";
 import { weightStats } from "@/lib/calc/weight";
 import { maintenance, targets, dailySeries, topFoods, avgRestingPerDay } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
-import { INPUT } from "@/ui/kit";
-import { LineChart, Segmented, Stat, PageHead, caption } from "@/ui/charts";
+import { INPUT, PageHead, SUB, Segmented, Stat, caption } from "@/ui/kit";
+import { LineChart } from "@/ui/charts";
 
 const ACCENT = "#E2B461";
 
-/** The detail pages use the sub-card recipe, not the heavier tab card. */
-const SUB: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-  marginBottom: 10,
-};
 
 export function CaloriesPage({ onBack }: { onBack: () => void }) {
   const [scope, setScope] = useState<"week" | "month">("week");
@@ -136,9 +125,9 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
           <span style={{ fontSize: 12.5, color: C.soft }}>kcal a day</span>
         </div>
 
-        <button onClick={() => setShowMath((v) => !v)} style={{
-          background: "none", border: "none", color: C.faint, fontSize: 11.5,
-          cursor: "pointer", padding: "12px 0 0", minHeight: 32,
+        <button onClick={() => setShowMath((v) => !v)} aria-expanded={showMath} style={{
+          background: "none", border: "none", color: ACCENT, fontSize: 12,
+          cursor: "pointer", padding: "12px 0 0", minHeight: 34,
         }}>
           {showMath ? "Hide calculation" : "Show calculation"}
         </button>
@@ -210,7 +199,7 @@ export function CaloriesPage({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 10 }}>
         <Stat label="Eaten, daily average" value={Math.round(avgEaten).toLocaleString()}
           color={ACCENT}
           sub={`${logged.length} of ${days} days logged`} />

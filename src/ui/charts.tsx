@@ -5,15 +5,20 @@
  * geometry is precomputed, the shapes are a dozen elements, and a library would add a
  * dependency to draw rectangles.
  *
- * Two conventions carried over:
+ * Three conventions:
+ *
  *   - `preserveAspectRatio="none"` with a fixed viewBox, so the chart stretches to the
  *     card. Every stroke therefore needs `vector-effect="non-scaling-stroke"` or the
  *     non-uniform scale distorts its weight.
  *   - Axis labels are absolutely-positioned HTML beside the SVG, not `<text>`, so they
  *     are not stretched either.
+ *   - A bar's geometry is transitioned in CSS, so stepping the week/month toggle grows
+ *     the bars into their new heights instead of cutting to them.
+ *
+ * `Segmented`, `Stat`, `PageHead` and `caption` used to live here. They are not charts;
+ * they are in the kit.
  */
 
-import type { CSSProperties, ReactNode } from "react";
 import { C, num } from "./tokens";
 
 export interface Point {
@@ -21,10 +26,13 @@ export interface Point {
   value: number | null;
 }
 
-const AXIS_W = 30;
+const AXIS_W = 34;
+
+/** Bars move to their new size rather than jumping. */
+const GROW = "y var(--t-page) var(--ease), height var(--t-page) var(--ease)";
 
 function Frame({ children, height, ticks }: {
-  children: ReactNode; height: number; ticks: { label: string; top: number }[];
+  children: React.ReactNode; height: number; ticks: { label: string; top: number }[];
 }) {
   return (
     <div style={{ display: "flex", gap: 6 }}>
@@ -32,7 +40,7 @@ function Frame({ children, height, ticks }: {
         {ticks.map((t) => (
           <span key={t.label + t.top} style={{
             position: "absolute", right: 0, top: `${t.top}%`, transform: "translateY(-50%)",
-            fontSize: 11, color: C.faint, whiteSpace: "nowrap", ...num,
+            fontSize: 10.5, color: C.faint, whiteSpace: "nowrap", ...num,
           }}>
             {t.label}
           </span>
@@ -49,10 +57,54 @@ function niceTicks(lo: number, hi: number, count = 4): number[] {
   return Array.from({ length: count + 1 }, (_, i) => lo + step * i);
 }
 
+/**
+ * Turn tick values into labels, dropping any that formatting has made identical.
+ *
+ * An axis spanning 7h50m to 8h10m formatted as whole hours printed "8h" five times down
+ * the side, which says nothing and looks like a rendering fault. Ticks that collapse to
+ * one label are one tick.
+ */
+function tickLabels(
+  values: number[], format: (v: number) => string, toTop: (v: number) => number,
+): { label: string; top: number }[] {
+  const seen = new Set<string>();
+  const out: { label: string; top: number }[] = [];
+  for (const v of values) {
+    const label = format(v);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, top: toTop(v) });
+  }
+  return out;
+}
+
+/**
+ * A default number format that keeps ticks distinct AND short enough to fit the gutter.
+ *
+ * Precision comes from the SPAN — whole numbers for a wide axis, decimals for a narrow
+ * one — because a 7.6-to-8.3 axis rounded to whole numbers prints "8" five times. Width
+ * comes from the MAGNITUDE: a calorie axis running to 2,508 does not fit a 34px gutter,
+ * so past a thousand it goes to "2.5k". Both are decided here rather than by the caller,
+ * which knows neither.
+ */
+export function axisFormat(span: number, max = span): (v: number) => string {
+  const big = Math.abs(max) >= 2000;
+  if (big) {
+    return (v) => {
+      // Zero is zero, not "0.0k".
+      if (Math.round(v) === 0) return "0";
+      const k = v / 1000;
+      return Math.abs(k) >= 10 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
+    };
+  }
+  if (span >= 20) return (v) => Math.round(v).toLocaleString();
+  if (span >= 2) return (v) => v.toFixed(1);
+  return (v) => v.toFixed(2);
+}
+
 /** A line, with optional raw dots behind it and a dashed reference line. */
 export function LineChart({
-  points, color, height = 150, format = (v: number) => String(Math.round(v)),
-  dots, reference, referenceLabel, xLabels,
+  points, color, height = 150, format, dots, reference, referenceLabel, xLabels,
 }: {
   points: Point[];
   color: string;
@@ -83,10 +135,8 @@ export function LineChart({
     .filter(Boolean)
     .join(" ");
 
-  const ticks = niceTicks(min, max).map((v) => ({
-    label: format(v),
-    top: (gy(v) / 120) * 100,
-  }));
+  const fmt = format ?? axisFormat(max - min, max);
+  const ticks = tickLabels(niceTicks(min, max), fmt, (v) => (gy(v) / 120) * 100);
 
   return (
     <>
@@ -96,7 +146,7 @@ export function LineChart({
           {ticks.map((t) => (
             <line key={t.label} x1="0" x2="300"
               y1={(t.top / 100) * 120} y2={(t.top / 100) * 120}
-              stroke="rgba(255,255,255,.08)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              stroke="rgba(255,255,255,.07)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
           ))}
           {reference != null && (
             <line x1="0" x2="300" y1={gy(reference).toFixed(1)} y2={gy(reference).toFixed(1)}
@@ -115,7 +165,7 @@ export function LineChart({
       {xLabels && points.length > 1 && (
         <div style={{
           display: "flex", justifyContent: "space-between", marginLeft: AXIS_W + 6,
-          fontSize: 11, color: C.faint, marginTop: 4, ...num,
+          fontSize: 10.5, color: C.faint, marginTop: 5, ...num,
         }}>
           <span>{points[0].label}</span>
           <span>{points[points.length - 1].label}</span>
@@ -130,7 +180,7 @@ export function LineChart({
 
 /** Bars with an optional dashed average. */
 export function BarChart({
-  points, color, height = 110, average, format = (v: number) => String(Math.round(v)),
+  points, color, height = 110, average, format,
   overThreshold, overColor,
 }: {
   points: Point[];
@@ -146,18 +196,22 @@ export function BarChart({
   if (!values.length) return <Empty height={height} />;
   const hi = Math.max(1, ...values, average ?? 0);
   const slot = 300 / points.length;
-  const w = slot * 0.56;
+  // Wide bars on a 7-day chart, thin ones on a 30-day chart, with a floor so a year of
+  // points never collapses into a solid block.
+  const w = Math.max(1.6, slot * (points.length > 20 ? 0.66 : 0.56));
 
-  const ticks = niceTicks(0, hi, 3).map((v) => ({
-    label: format(v),
-    top: ((96 - (v / hi) * 90) / 100) * 100,
-  }));
+  const fmt = format ?? axisFormat(hi, hi);
+  const ticks = tickLabels(niceTicks(0, hi, 3), fmt, (v) => 96 - (v / hi) * 90);
 
   return (
     <>
       <Frame height={height} ticks={ticks}>
         <svg viewBox="0 0 300 100" preserveAspectRatio="none"
           style={{ width: "100%", height, display: "block" }}>
+          {ticks.map((t) => (
+            <line key={t.label} x1="0" x2="300" y1={t.top} y2={t.top}
+              stroke="rgba(255,255,255,.06)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          ))}
           {points.map((p, i) => {
             const v = p.value ?? 0;
             const h = (v / hi) * 90;
@@ -168,7 +222,8 @@ export function BarChart({
                 y={(96 - h).toFixed(1)}
                 height={Math.max(h, v ? 1.5 : 0).toFixed(1)}
                 fill={red ? (overColor ?? C.red) : color}
-                opacity={v ? 1 : 0.22} />
+                opacity={v ? 1 : 0.22}
+                style={{ transition: GROW }} />
             );
           })}
           {average != null && average > 0 && (
@@ -182,7 +237,7 @@ export function BarChart({
       </Frame>
       <div style={{
         display: "flex", justifyContent: "space-between", marginLeft: AXIS_W + 6,
-        fontSize: 11, color: C.faint, marginTop: 4, ...num,
+        fontSize: 10.5, color: C.faint, marginTop: 5, ...num,
       }}>
         <span>{points[0]?.label}</span>
         <span>{points[points.length - 1]?.label}</span>
@@ -208,13 +263,16 @@ export function HourlyBars({
     <>
       <svg viewBox="0 0 300 80" preserveAspectRatio="none"
         style={{ width: "100%", height, display: "block" }}>
+        <line x1="0" x2="300" y1="71" y2="71" stroke="rgba(255,255,255,.08)"
+          strokeWidth="1" vectorEffect="non-scaling-stroke" />
         {counts.map((n, i) => {
           const h = (n / hi) * 60;
           return (
             <rect key={i} rx="1.5"
               x={(i * slot + 2).toFixed(1)} width={(slot - 4).toFixed(1)}
               y={(70 - h).toFixed(1)} height={Math.max(h, n ? 1.5 : 0).toFixed(1)}
-              fill={color} opacity={n ? 1 : 0.18} />
+              fill={color} opacity={n ? 1 : 0.18}
+              style={{ transition: GROW }} />
           );
         })}
         {markerHour != null && markerHour >= START && (
@@ -226,7 +284,8 @@ export function HourlyBars({
         )}
       </svg>
       <div style={{
-        display: "flex", justifyContent: "space-between", fontSize: 11, color: C.faint, ...num,
+        display: "flex", justifyContent: "space-between", fontSize: 10.5,
+        color: C.faint, marginTop: 5, ...num,
       }}>
         <span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
       </div>
@@ -243,81 +302,6 @@ function Empty({ height }: { height: number }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-
-export function Segmented<T extends string>({
-  value, options, onChange, accent,
-}: { value: T; options: readonly T[]; onChange: (v: T) => void; accent: string }) {
-  return (
-    <div style={{
-      display: "flex", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16,
-      padding: 2, background: "rgba(255,255,255,.06)",
-    }}>
-      {options.map((o) => (
-        <button key={o} onClick={() => onChange(o)} style={{
-          border: "none", borderRadius: 13, cursor: "pointer",
-          background: o === value ? accent : "transparent",
-          color: o === value ? "#0F1626" : C.soft,
-          fontWeight: 500, fontSize: 12.5, padding: "6px 12px", minHeight: 30,
-          textTransform: "capitalize",
-        }}>
-          {o}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** A labelled figure. Each metric is its own sub-card on the detail pages. */
-export function Stat({
-  label, value, unit, sub, color,
-}: { label: string; value: ReactNode; unit?: string; sub?: ReactNode; color?: string }) {
-  return (
-    <div style={{
-      background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.07)",
-      borderRadius: 12, padding: "10px 12px",
-    }}>
-      <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.1, color: color ?? C.ink, ...num }}>
-        {value}
-        {unit && <span style={{ fontSize: 12, fontWeight: 400, color: C.soft }}>{unit}</span>}
-      </div>
-      {sub != null && (
-        <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3, ...num }}>{sub}</div>
-      )}
-    </div>
-  );
-}
-
-/** The back chevron every detail page opens with. */
-export function PageHead({
-  title, back, backLabel, accent, right,
-}: { title: string; back: () => void; backLabel: string; accent: string; right?: ReactNode }) {
-  return (
-    <>
-      <button onClick={back} style={{
-        display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
-        color: accent, fontSize: 14, cursor: "pointer", padding: 0, minHeight: 44,
-      }}>
-        <span style={{ fontSize: 20, lineHeight: 1 }}>‹</span> {backLabel}
-      </button>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        gap: 10, margin: "0 0 14px",
-      }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
-          {title}
-        </h1>
-        {right}
-      </div>
-    </>
-  );
-}
-
-export const caption: CSSProperties = {
-  fontSize: 11.5, color: C.faint, marginTop: 8, lineHeight: 1.5,
-};
 
 /**
  * One bar split into shares — "where the calories come from".
@@ -336,7 +320,10 @@ export function StackedBar({
     }}>
       {segments.map((s) => (
         <span key={s.name} title={`${s.name} ${s.pct}%`}
-          style={{ display: "block", width: `${s.pct}%`, background: s.color }} />
+          style={{
+            display: "block", width: `${s.pct}%`, background: s.color,
+            transition: "width var(--t-page) var(--ease)",
+          }} />
       ))}
     </div>
   );

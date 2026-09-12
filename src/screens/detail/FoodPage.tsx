@@ -25,23 +25,15 @@ import {
   resolveSavedMeal, type Targets,
 } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
-import { INPUT, MealIcon, MEAL_TILE_ORDER } from "@/ui/kit";
-import { BarChart, Segmented, Stat, PageHead, StackedBar, RAMP, caption } from "@/ui/charts";
+import {
+  SUB, INPUT, RULE, MealIcon, MEAL_TILE_ORDER, PageHead, Segmented, Stat, caption,
+  Disclosure, FieldLabel, Meter, RemoveButton, cta, ghostBtn,
+} from "@/ui/kit";
+import { BarChart, StackedBar, RAMP } from "@/ui/charts";
 
 const ACCENT = "#E2B461";
 const ON_ACCENT = "#1F1708";
 
-/** Detail pages use the sub-card recipe, not the heavier tab card. */
-const SUB: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-  marginBottom: 10,
-};
 
 export function FoodPage({
   goal, onBack, onMeal,
@@ -74,10 +66,12 @@ export function FoodPage({
 
       {/* Jumping straight to a meal from here saves going back to the tab first. */}
       <section style={SUB}>
-        <div style={{ fontSize: 12, color: C.soft, marginBottom: 10 }}>Log to a meal</div>
+        <FieldLabel style={{ marginBottom: 10 }}>Log to a meal</FieldLabel>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
           {MEAL_TILE_ORDER.map((key) => (
-            <button key={key} onClick={() => onMeal(key)} style={{
+            <button key={key} onClick={() => onMeal(key)}
+              aria-label={`Open ${MEALS.find((m) => m.key === key)!.label.toLowerCase()}`}
+              style={{
               display: "flex", alignItems: "center", gap: 7, padding: "9px 10px",
               borderRadius: 11, border: "1px solid rgba(255,255,255,.08)",
               background: "rgba(255,255,255,.05)", cursor: "pointer", minHeight: 40,
@@ -94,7 +88,7 @@ export function FoodPage({
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 10 }}>
         <Stat
           label="Average a day"
           value={w.daysLogged ? w.avgPerLoggedDay.toLocaleString() : "—"}
@@ -115,7 +109,7 @@ export function FoodPage({
           display: "flex", justifyContent: "space-between", alignItems: "baseline",
           gap: 10, marginBottom: 12,
         }}>
-          <span style={{ fontSize: 12, color: C.soft }}>Calories, each day</span>
+          <FieldLabel>Calories, each day</FieldLabel>
           <span style={{ fontSize: 11.5, color: C.faint, ...num }}>{scopeLabel}</span>
         </div>
         {/* `average` is what draws the dashed line; here it carries the TARGET, and the
@@ -142,7 +136,7 @@ export function FoodPage({
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             gap: 10, marginBottom: 10,
           }}>
-            <span style={{ fontSize: 12, color: C.soft }}>Where the calories come from</span>
+            <FieldLabel>Where the calories come from</FieldLabel>
             <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
               {w.totalKcal.toLocaleString()} Cal · {scopeLabel}
             </span>
@@ -154,7 +148,7 @@ export function FoodPage({
             {sources.map((s, i) => (
               <div key={s.name} style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "6px 0",
-                borderTop: i === 0 ? "none" : "1px solid rgba(255,255,255,.07)",
+                borderTop: i === 0 ? "none" : RULE,
               }}>
                 <span style={{
                   width: 9, height: 9, borderRadius: 3, flex: "none",
@@ -182,7 +176,7 @@ export function FoodPage({
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             gap: 10, marginBottom: 12,
           }}>
-            <span style={{ fontSize: 12, color: C.soft }}>Most repeated</span>
+            <FieldLabel>Most repeated</FieldLabel>
             <span style={{ fontSize: 11.5, color: C.faint }}>{scopeLabel}</span>
           </div>
           {repeated.map((r) => (
@@ -193,12 +187,7 @@ export function FoodPage({
               }}>
                 {r.name}
               </span>
-              <span style={{
-                flex: 1, height: 9, background: "rgba(255,255,255,.1)", borderRadius: 3,
-                overflow: "hidden",
-              }}>
-                <span style={{ display: "block", height: "100%", width: `${r.pct}%`, background: ACCENT, borderRadius: 3 }} />
-              </span>
+              <Meter pct={r.pct} color={ACCENT} height={8} style={{ flex: 1 }} />
               <span style={{ fontSize: 12, color: C.soft, width: 76, textAlign: "right", flex: "none", ...num }}>
                 {r.count}× · {r.kcal.toLocaleString()}
               </span>
@@ -212,7 +201,7 @@ export function FoodPage({
       )}
 
       <section style={SUB}>
-        <div style={{ fontSize: 12, color: C.soft, marginBottom: 10 }}>Split by meal</div>
+        <FieldLabel style={{ marginBottom: 10 }}>Split by meal</FieldLabel>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
           {split.filter((s) => s.kcal > 0).map((s) => (
             <div key={s.key} style={{
@@ -257,16 +246,11 @@ function Library() {
 
   return (
     <section style={SUB}>
-      <button onClick={() => setOpen((v) => !v)} style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-        width: "100%", border: "none", background: "transparent", padding: 0,
-        cursor: "pointer", minHeight: 32,
-      }}>
-        <span style={{ fontSize: 12, color: C.soft }}>Your foods</span>
-        <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
-          {foods.length} saved {open ? "▲" : "▼"}
-        </span>
-      </button>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} minHeight={32}
+        left={<FieldLabel>Your foods</FieldLabel>}
+        right={<span style={{ fontSize: 11.5, color: C.faint, ...num }}>{foods.length} saved</span>}
+      />
 
       {open && (
         <>
@@ -280,7 +264,7 @@ function Library() {
             </div>
           )}
           {foods.map((f) => (
-            <div key={f.id} style={{ padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+            <div key={f.id} style={{ padding: "7px 0", borderTop: RULE }}>
               <button onClick={() => setEditing(editing === f.id ? null : f.id)} style={{
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
                 gap: 10, width: "100%", border: "none", background: "transparent",
@@ -346,7 +330,7 @@ function EditFood({ food, onDone }: { food: Food; onDone: () => void }) {
 
   return (
     <div style={{ paddingTop: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)", gap: 8, marginBottom: 8 }}>
         <input value={f.name} aria-label="Name" onChange={(e) => setF({ ...f, name: e.target.value })} style={cell} />
         <input value={f.unit} aria-label="Unit" onChange={(e) => setF({ ...f, unit: e.target.value })} style={cell} />
       </div>
@@ -365,25 +349,21 @@ function EditFood({ food, onDone }: { food: Food; onDone: () => void }) {
         onChange={(e) => setF({ ...f, grams: e.target.value })} style={{ ...cell, marginBottom: 8 }} />
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 8 }}>
         <button onClick={() => void save()} disabled={!ready} style={{
-          height: 38, borderRadius: 11, border: "none",
-          background: ready ? ACCENT : "rgba(226,180,97,.3)", color: ON_ACCENT,
-          fontSize: 13.5, fontWeight: 600, cursor: ready ? "pointer" : "not-allowed",
+          ...cta(ACCENT, ON_ACCENT), height: 38,
+          background: ready ? ACCENT : "rgba(255,255,255,.08)",
+          color: ready ? ON_ACCENT : C.faint,
         }}>
           Save
         </button>
-        <button onClick={onDone} style={{
-          height: 38, padding: "0 12px", borderRadius: 11,
-          border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.07)",
-          color: C.soft, fontSize: 13, cursor: "pointer",
-        }}>
+        <button onClick={onDone} style={{ ...ghostBtn, height: 38, padding: "0 12px" }}>
           Cancel
         </button>
         <button
           onClick={() => (confirming ? void remove() : (setConfirming(true), setTimeout(() => setConfirming(false), 3000)))}
           style={{
-            height: 38, padding: "0 12px", borderRadius: 11,
+            ...ghostBtn, height: 38, padding: "0 12px",
             border: "1px solid rgba(224,122,111,.4)", background: "rgba(224,122,111,.12)",
-            color: C.red, fontSize: 13, cursor: "pointer",
+            color: C.red,
           }}>
           {confirming ? "Sure?" : "Delete"}
         </button>
@@ -404,16 +384,11 @@ function SavedMeals() {
 
   return (
     <section style={SUB}>
-      <button onClick={() => setOpen((v) => !v)} style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-        width: "100%", border: "none", background: "transparent", padding: 0,
-        cursor: "pointer", minHeight: 32,
-      }}>
-        <span style={{ fontSize: 12, color: C.soft }}>Saved meals</span>
-        <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
-          {meals.length} saved {open ? "▲" : "▼"}
-        </span>
-      </button>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} minHeight={32}
+        left={<FieldLabel>Saved meals</FieldLabel>}
+        right={<span style={{ fontSize: 11.5, color: C.faint, ...num }}>{meals.length} saved</span>}
+      />
 
       {open && (
         meals.length === 0 ? (
@@ -425,7 +400,7 @@ function SavedMeals() {
           meals.map((m) => {
             const r = resolveSavedMeal(m, foods);
             return (
-              <div key={m.id} style={{ padding: "9px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+              <div key={m.id} style={{ padding: "9px 0", borderTop: RULE }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
                   <span style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                     {m.name}
@@ -438,14 +413,8 @@ function SavedMeals() {
                   <span style={{ fontSize: 12, color: ACCENT, flex: "none", ...num }}>
                     {r.kcal.toLocaleString()} Cal
                   </span>
-                  <button onClick={async () => { await removeSavedMeal(m.id); bump(); }}
-                    aria-label={`Delete ${m.name}`}
-                    style={{
-                      border: "none", background: "transparent", color: C.faint,
-                      cursor: "pointer", fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
-                    }}>
-                    ×
-                  </button>
+                  <RemoveButton onClick={async () => { await removeSavedMeal(m.id); bump(); }}
+                    label={`Delete ${m.name}`} />
                 </div>
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3, ...num }}>
                   {r.items.map((i) => `${i.item.qty} ${i.item.name}`).join(" · ")}
@@ -503,16 +472,16 @@ function Goals({ goal }: { goal: Targets }) {
 
   return (
     <section style={SUB}>
-      <button onClick={() => setOpen((v) => !v)} style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-        width: "100%", border: "none", background: "transparent", padding: 0,
-        cursor: "pointer", minHeight: 32,
-      }}>
-        <span style={{ fontSize: 12, color: C.soft }}>Set goals manually</span>
-        <span style={{ fontSize: 11.5, color: overridden ? ACCENT : C.faint }}>
-          {overridden ? "some set by hand" : "automatic"} {open ? "▲" : "▼"}
-        </span>
-      </button>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} minHeight={32}
+        accent={overridden ? ACCENT : C.soft}
+        left={<FieldLabel>Set goals manually</FieldLabel>}
+        right={
+          <span style={{ fontSize: 11.5, color: overridden ? ACCENT : C.faint }}>
+            {overridden ? "some set by hand" : "automatic"}
+          </span>
+        }
+      />
 
       {open && (
         <div style={{ paddingTop: 12 }}>

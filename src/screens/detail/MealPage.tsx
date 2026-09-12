@@ -23,8 +23,11 @@ import {
   MEALS, dayFood, portionLabel, resolveSavedMeal, foodPayload, planCopy, roundQty,
 } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, Stepper, ghost, DayStrip } from "@/ui/kit";
-import { PageHead, caption } from "@/ui/charts";
+import {
+  CARD, DayStrip, Empty, FieldLabel, INPUT, PageHead, RULE, RemoveButton, Stepper, caption, ghost,
+} from "@/ui/kit";
+import { Icon } from "@/ui/icons";
+
 import { FoodPicker } from "@/ui/FoodPicker";
 
 const ACCENT = "#E2B461";
@@ -79,7 +82,7 @@ export function MealPage({
 
       {relevant.length > 0 && (
         <section style={CARD}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 10 }}>Saved meals</div>
+          <FieldLabel style={{ marginBottom: 10 }}>Saved meals</FieldLabel>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {relevant.map((m) => (
               <SavedChip key={m.id} savedMeal={m} foods={foods} onLog={() => logSaved(m)} />
@@ -101,7 +104,7 @@ export function MealPage({
           display: "flex", justifyContent: "space-between", alignItems: "baseline",
           gap: 10, marginBottom: 8,
         }}>
-          <span style={{ fontSize: 12, color: C.soft }}>In this meal</span>
+          <FieldLabel>In this meal</FieldLabel>
           {rows.length > 0 && (
             <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
               P {Math.round(rows.reduce((s, e) => s + (e.p || 0), 0))} ·{" "}
@@ -112,11 +115,9 @@ export function MealPage({
         </div>
 
         {rows.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: C.faint, paddingTop: 2 }}>
-            Nothing logged for this meal yet.
-          </div>
+          <Empty>Nothing logged for this meal yet.</Empty>
         ) : (
-          rows.map((e) => <MealRow key={e.id} entry={e} foods={foods} />)
+          rows.map((e) => <MealRow key={e.id} entry={e} />)
         )}
 
         <CopyFrom
@@ -182,12 +183,10 @@ function SavedChip({
 // ---------------------------------------------------------------------------
 
 /** A logged row, with the quantity editable in place. */
-function MealRow({ entry, foods }: { entry: ReturnType<typeof dayFood>["entries"][number]; foods: Food[] }) {
+function MealRow({ entry }: { entry: ReturnType<typeof dayFood>["entries"][number] }) {
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState(entry.qty);
   const [confirming, setConfirming] = useState(false);
-
-  const food = foods.find((f) => f.id === entry.foodId) ?? null;
 
   const save = async () => {
     setEditing(false);
@@ -214,7 +213,7 @@ function MealRow({ entry, foods }: { entry: ReturnType<typeof dayFood>["entries"
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 8, padding: "9px 0",
-      borderTop: "1px solid rgba(255,255,255,.08)",
+      borderTop: RULE,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -226,7 +225,6 @@ function MealRow({ entry, foods }: { entry: ReturnType<typeof dayFood>["entries"
         <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, ...num }}>
           {portionLabel(entry)}{entry.at ? ` · ${entry.at}` : ""} ·{" "}
           P{Math.round(entry.p)} C{Math.round(entry.c)} F{Math.round(entry.f)}
-          {food?.grams_per_unit ? ` · 1 ${entry.unit} = ${food.grams_per_unit} g` : ""}
         </div>
       </div>
 
@@ -259,15 +257,9 @@ function MealRow({ entry, foods }: { entry: ReturnType<typeof dayFood>["entries"
               Remove?
             </button>
           ) : (
-            <button
+            <RemoveButton
               onClick={() => { setConfirming(true); setTimeout(() => setConfirming(false), 3000); }}
-              aria-label={`Remove ${entry.name}`}
-              style={{
-                border: "none", background: "transparent", color: C.faint,
-                cursor: "pointer", fontSize: 17, padding: "0 2px", lineHeight: 1, flex: "none",
-              }}>
-              ×
-            </button>
+              label={`Remove ${entry.name}`} size={16} />
           )}
         </>
       )}
@@ -387,7 +379,9 @@ function SaveAsMeal({
         }}>
           Save
         </button>
-        <button onClick={() => setOpen(false)} aria-label="Cancel" style={ghost(42, 11, C.soft)}>×</button>
+        <button onClick={() => setOpen(false)} aria-label="Cancel" style={ghost(42, 11, C.soft)}>
+          <Icon name="close" size={16} strokeWidth={1.9} />
+        </button>
       </div>
       {items.length < rows.length && (
         <div style={caption}>

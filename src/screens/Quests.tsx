@@ -22,15 +22,18 @@ import {
 } from "@/db/local";
 import { useLive, bump, useNow } from "@/db/store";
 import type { ActiveSession, AnyEvent, Track } from "@/db/types";
-import { today, localTime, nowMin, shiftDays, fmtMin } from "@/lib/date";
+import { today, nowMin, shiftDays, fmtMin } from "@/lib/date";
 import {
   TRACKS, workRows, minutesOn, minutesBetween, streak, dailyMinutes, bySubject,
   sessionRows, applications, artPieces, artWeeks, hm, elapsedMinutes, STALE_HOURS,
   STAGE_OPTIONS, type WorkRow,
 } from "@/lib/calc/quests";
-import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip, ghost } from "@/ui/kit";
+import { C, num, onAccent } from "@/ui/tokens";
+import {
+  CARD, DayStrip, Disclosure, Empty, Eyebrow, FieldLabel, INPUT, Meter, RULE, RemoveButton, Stat, chip, cta, ghost, ghostBtn,
+} from "@/ui/kit";
 import { BarChart } from "@/ui/charts";
+import { Icon } from "@/ui/icons";
 
 const ACCENT = "#B6A6E8";
 
@@ -104,17 +107,6 @@ export function Quests() {
   );
 }
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase",
-      color: C.faint, margin: "4px 2px 10px",
-    }}>
-      {children}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 
 /**
@@ -132,7 +124,9 @@ function StalePrompt({
   const label = TRACKS.find((t) => t.key === session.track)?.label ?? session.track;
 
   return (
-    <section style={{ ...CARD, borderColor: "rgba(226,180,97,.35)", background: "rgba(226,180,97,.08)" }}>
+    <section style={{
+      ...CARD, border: "1px solid rgba(226,180,97,.35)", background: "rgba(226,180,97,.08)",
+    }}>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
         A {label} timer was left running
       </div>
@@ -142,7 +136,7 @@ function StalePrompt({
         actually ended, or discard it.
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 12, color: C.soft }}>Ended</span>
+        <FieldLabel>Ended</FieldLabel>
         <input type="time" value={end} onChange={(e) => setEnd(e.target.value)}
           style={{ ...INPUT, width: 120, colorScheme: "dark" }} />
       </div>
@@ -165,16 +159,6 @@ function StalePrompt({
   );
 }
 
-const ghostBtn: React.CSSProperties = {
-  height: 42, padding: "0 14px", borderRadius: 12,
-  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-  color: "#97A1B8", fontSize: 13, cursor: "pointer",
-};
-
-const cta = (bg: string, ink = "#171233"): React.CSSProperties => ({
-  height: 42, borderRadius: 12, border: "none", background: bg, color: ink,
-  fontSize: 14, fontWeight: 600, cursor: "pointer",
-});
 
 // ---------------------------------------------------------------------------
 
@@ -215,33 +199,29 @@ function TrackCard({
 
   return (
     <section style={CARD}>
-      <button onClick={() => setOpen((v) => !v)} style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-        width: "100%", border: "none", background: "transparent", padding: 0,
-        cursor: "pointer", minHeight: 38,
-      }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} accent={meta.accent}
+        left={<>
           <TrackIcon track={track} color={meta.accent} />
           <span style={{ fontSize: 15, fontWeight: 600, color: C.ink }}>{meta.label}</span>
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
+        </>}
+        right={
+          // A live session says so in its own colour, so a glance down the tab finds it.
+          <span style={{
+            fontSize: 12.5, color: mine ? meta.accent : C.faint,
+            fontWeight: mine ? 600 : 400, ...num,
+          }}>
             {mine ? "running" : hm(weekMins)}
           </span>
-          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden
-            style={{ display: "block", transform: open ? "rotate(90deg)" : "none" }}>
-            <path d="M5 2.5 L9.5 7 L5 11.5" fill="none" stroke={meta.accent}
-              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </button>
+        }
+      />
 
       {open && (
         <div style={{ paddingTop: 12 }}>
           {mine ? (
             <div style={{
-              border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "10px 12px",
-              borderColor: `${meta.accent}59`, background: `${meta.accent}14`, marginBottom: 12,
+              border: `1px solid ${meta.accent}59`, borderRadius: 12, padding: "10px 12px",
+              background: `${meta.accent}14`, marginBottom: 12,
             }}>
               {/* Duration first, with a pulsing dot — mid-session the elapsed time is
                   the number you want, not the moment it began. */}
@@ -307,9 +287,7 @@ function TrackCard({
             </div>
           ) : stage === "starting" ? (
             <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>
-                What are you working on?
-              </div>
+              <FieldLabel style={{ marginBottom: 6 }}>What are you working on?</FieldLabel>
               <input value={focus} onChange={(e) => setFocus(e.target.value)} autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -329,12 +307,8 @@ function TrackCard({
                   {known.length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                       {known.map((k) => (
-                        <button key={k} onClick={() => setSubject(k)} style={{
-                          border: "1px solid rgba(255,255,255,.1)", borderRadius: 9,
-                          background: subject === k ? meta.accent : "rgba(255,255,255,.05)",
-                          color: subject === k ? "#171233" : C.soft,
-                          fontSize: 12.5, padding: "6px 10px", cursor: "pointer",
-                        }}>
+                        <button key={k} onClick={() => setSubject(k)}
+                          aria-pressed={subject === k} style={chip(subject === k, meta.accent)}>
                           {k}
                         </button>
                       ))}
@@ -363,24 +337,22 @@ function TrackCard({
               onClick={() => setStage("starting")}
               disabled={busyElsewhere}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
-                width: "100%", height: 46, borderRadius: 13, border: "none",
+                ...cta(meta.accent), height: 46, marginBottom: 12,
                 background: busyElsewhere ? "rgba(255,255,255,.07)" : meta.accent,
-                color: busyElsewhere ? C.faint : "#171233",
-                fontSize: 14.5, fontWeight: 600,
-                cursor: busyElsewhere ? "not-allowed" : "pointer", marginBottom: 12,
+                color: busyElsewhere ? C.faint : onAccent(meta.accent),
+                cursor: busyElsewhere ? "not-allowed" : "pointer",
               }}>
               {busyElsewhere ? "Another session is running" : "Start session"}
             </button>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
             <Mini label="Today" value={hm(todayMins)} />
             <Mini label="Last 7 days" value={hm(weekMins)} />
             <Mini label="Streak" value={streak(rows) ? `${streak(rows)} d` : "—"} />
           </div>
 
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>Hours a day</div>
+          <FieldLabel style={{ marginBottom: 6 }}>Hours a day</FieldLabel>
           <BarChart
             points={series.map((d) => ({ label: d.date.slice(5), value: d.mins / 60 }))}
             color={meta.accent}
@@ -389,9 +361,7 @@ function TrackCard({
 
           {subjects.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>
-                Split by {meta.subjectLabel?.toLowerCase()}
-              </div>
+              <FieldLabel style={{ marginBottom: 8 }}>Split by {meta.subjectLabel?.toLowerCase()}</FieldLabel>
               {subjects.map((s) => (
                 <div key={s.name} style={{ marginBottom: 8 }}>
                   <div style={{
@@ -401,13 +371,7 @@ function TrackCard({
                     <span style={{ color: C.soft }}>{s.name}</span>
                     <span style={{ color: C.ink }}>{hm(s.mins)}</span>
                   </div>
-                  <div style={{
-                    height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden",
-                  }}>
-                    <div style={{
-                      height: "100%", width: `${s.pct}%`, background: meta.accent, borderRadius: 3,
-                    }} />
-                  </div>
+                  <Meter pct={s.pct} color={meta.accent} />
                 </div>
               ))}
             </div>
@@ -417,11 +381,11 @@ function TrackCard({
             display: "flex", justifyContent: "space-between", alignItems: "center",
             gap: 8, flexWrap: "wrap", margin: "14px 0 8px",
           }}>
-            <span style={{ fontSize: 12, color: C.soft }}>What you did</span>
+            <FieldLabel>What you did</FieldLabel>
             <DayStrip date={day} onChange={setDay} compact />
           </div>
           {dayRows.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.faint }}>Nothing logged for this day.</div>
+            <Empty>Nothing logged for this day.</Empty>
           ) : (
             dayRows.map((r) => <SessionRow key={r.id} row={r} accent={meta.accent} />)
           )}
@@ -434,7 +398,7 @@ function TrackCard({
 function SessionRow({ row, accent }: { row: WorkRow; accent: string }) {
   return (
     <div style={{
-      display: "flex", gap: 10, padding: "9px 0", borderTop: "1px solid rgba(255,255,255,.08)",
+      display: "flex", gap: 10, padding: "9px 0", borderTop: RULE,
     }}>
       <span style={{ fontSize: 11.5, color: accent, flex: "none", width: 96, paddingTop: 1, ...num }}>
         {row.start}–{row.end}
@@ -447,26 +411,16 @@ function SessionRow({ row, accent }: { row: WorkRow; accent: string }) {
           {hm(row.mins)}{row.skill && row.note ? ` · ${row.skill}` : ""}
         </span>
       </span>
-      <button onClick={async () => { await removeEvent(row.id); bump(); }} aria-label="Remove"
-        style={{
-          border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-          fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
-        }}>
-        ×
-      </button>
+      <RemoveButton onClick={async () => { await removeEvent(row.id); bump(); }}
+        label={`Remove ${row.note || row.skill || "session"}`} />
     </div>
   );
 }
 
 function Mini({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.07)",
-      borderRadius: 12, padding: "9px 11px",
-    }}>
-      <div style={{ fontSize: 11.5, color: C.soft, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.1, ...num }}>{value}</div>
-    </div>
+    <Stat label={<span style={{ fontSize: 11.5 }}>{label}</span>} value={value}
+      style={{ padding: "9px 11px" }} />
   );
 }
 
@@ -512,26 +466,20 @@ function JobsCard({ events }: { events: AnyEvent[] }) {
 
   return (
     <section style={CARD}>
-      <button onClick={() => setOpen((v) => !v)} style={headerBtn}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <svg width="19" height="19" viewBox="0 0 22 22" aria-hidden style={{ display: "block" }}>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} accent={JOB_ACCENT}
+        left={<>
+          <svg width="19" height="19" viewBox="0 0 22 22" aria-hidden style={{ display: "block", flex: "none" }}>
             <path d="M2.8 7.4h16.4v10.2H2.8z M8 7.4V5.6c0-.7.6-1.2 1.3-1.2h3.4c.7 0 1.3.5 1.3 1.2v1.8 M2.8 11.6h16.4"
               fill="none" stroke={JOB_ACCENT} strokeWidth="1.6"
               strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span style={{ fontSize: 15, fontWeight: 600 }}>Jobs</span>
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
-            {live.length} live
-          </span>
-          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden
-            style={{ display: "block", transform: open ? "rotate(90deg)" : "none" }}>
-            <path d="M5 2.5 L9.5 7 L5 11.5" fill="none" stroke={JOB_ACCENT}
-              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </button>
+        </>}
+        right={
+          <span style={{ fontSize: 12.5, color: C.faint, ...num }}>{live.length} live</span>
+        }
+      />
 
       {open && (
         <div style={{ paddingTop: 12 }}>
@@ -542,7 +490,7 @@ function JobsCard({ events }: { events: AnyEvent[] }) {
               <input value={role} onChange={(e) => setRole(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void add()}
                 placeholder="Role" style={{ ...INPUT, marginTop: 8 }} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginTop: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, marginTop: 8 }}>
                 <button onClick={() => void add()} style={cta(JOB_ACCENT, "#0E1626")}>Add</button>
                 <button onClick={() => setAdding(false)} style={{
                   height: 42, padding: "0 14px", borderRadius: 12,
@@ -562,7 +510,7 @@ function JobsCard({ events }: { events: AnyEvent[] }) {
           )}
 
           {apps.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.faint }}>Nothing tracked yet.</div>
+            <Empty>Nothing tracked yet.</Empty>
           ) : (
             apps.map((a) => <ApplicationRow key={a.id} app={a} />)
           )}
@@ -571,12 +519,6 @@ function JobsCard({ events }: { events: AnyEvent[] }) {
     </section>
   );
 }
-
-const headerBtn: React.CSSProperties = {
-  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-  width: "100%", border: "none", background: "transparent", padding: 0,
-  cursor: "pointer", minHeight: 38,
-};
 
 function ApplicationRow({ app }: { app: ReturnType<typeof applications>[number] }) {
   const [expanded, setExpanded] = useState(false);
@@ -601,7 +543,7 @@ function ApplicationRow({ app }: { app: ReturnType<typeof applications>[number] 
   };
 
   return (
-    <div style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+    <div style={{ padding: "10px 0", borderTop: RULE }}>
       <button onClick={() => setExpanded((v) => !v)} style={{
         display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10,
         width: "100%", border: "none", background: "transparent", padding: 0,
@@ -646,10 +588,8 @@ function ApplicationRow({ app }: { app: ReturnType<typeof applications>[number] 
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
             {STAGE_OPTIONS.map((s) => (
-              <button key={s} onClick={() => void advance(s)} style={{
-                border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.05)",
-                borderRadius: 9, padding: "5px 9px", fontSize: 12, color: C.soft, cursor: "pointer",
-              }}>
+              <button key={s} onClick={() => void advance(s)}
+                style={{ ...chip(false, JOB_ACCENT), fontSize: 12, minHeight: 32 }}>
                 {s}
               </button>
             ))}
@@ -698,24 +638,20 @@ function ArtCard({ events }: { events: AnyEvent[] }) {
 
   return (
     <section style={CARD}>
-      <button onClick={() => setOpen((v) => !v)} style={headerBtn}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <svg width="19" height="19" viewBox="0 0 22 22" aria-hidden style={{ display: "block" }}>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)} accent={ART_ACCENT}
+        left={<>
+          <svg width="19" height="19" viewBox="0 0 22 22" aria-hidden style={{ display: "block", flex: "none" }}>
             <path d="M11 3.2c4.6 0 8.4 3.3 8.4 7.4 0 2.4-2 4.3-4.4 4.3h-1.6c-1.1 0-2 .9-2 2 0 .5.2.9.5 1.3.3.4.5.8.5 1.2 0 1-.8 1.4-1.4 1.4-4.6 0-8.4-3.7-8.4-8.6S6.4 3.2 11 3.2z"
               fill="none" stroke={ART_ACCENT} strokeWidth="1.6"
               strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span style={{ fontSize: 15, fontWeight: 600 }}>AI art</span>
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+        </>}
+        right={
           <span style={{ fontSize: 12.5, color: C.faint, ...num }}>{thisWeek} this week</span>
-          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden
-            style={{ display: "block", transform: open ? "rotate(90deg)" : "none" }}>
-            <path d="M5 2.5 L9.5 7 L5 11.5" fill="none" stroke={ART_ACCENT}
-              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </button>
+        }
+      />
 
       {open && (
         <div style={{ paddingTop: 12 }}>
@@ -727,9 +663,7 @@ function ArtCard({ events }: { events: AnyEvent[] }) {
               style={ghost(42, 11, ART_ACCENT)}>+</button>
           </div>
 
-          <div style={{ fontSize: 12, color: C.soft, margin: "14px 0 6px" }}>
-            Pieces a week
-          </div>
+          <FieldLabel style={{ margin: "14px 0 6px" }}>Pieces a week</FieldLabel>
           <BarChart
             points={weeks.map((w) => ({ label: w.label, value: w.made }))}
             color={ART_ACCENT}
@@ -740,7 +674,7 @@ function ArtCard({ events }: { events: AnyEvent[] }) {
             {pieces.slice(0, 10).map((p) => (
               <div key={p.id} style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "8px 0",
-                borderTop: "1px solid rgba(255,255,255,.08)",
+                borderTop: RULE,
               }}>
                 <span style={{ fontSize: 11.5, color: C.faint, width: 44, ...num }}>
                   {p.date.slice(5)}
@@ -759,13 +693,8 @@ function ArtCard({ events }: { events: AnyEvent[] }) {
                   }}>
                   {p.posted ? "posted" : "not posted"}
                 </button>
-                <button onClick={async () => { await removeEvent(p.id); bump(); }}
-                  aria-label="Remove" style={{
-                    border: "none", background: "transparent", color: C.faint,
-                    cursor: "pointer", fontSize: 16, padding: "0 2px",
-                  }}>
-                  ×
-                </button>
+                <RemoveButton onClick={async () => { await removeEvent(p.id); bump(); }}
+                  label={`Remove ${p.title}`} />
               </div>
             ))}
           </div>
@@ -788,17 +717,20 @@ function RawLog() {
 
   return (
     <section style={CARD}>
-      <button onClick={() => setOpen((v) => !v)} style={headerBtn}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>Raw log</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontSize: 12.5, color: C.faint, ...num }}>{rows.length} events</span>
-          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden
-            style={{ display: "block", transform: open ? "rotate(90deg)" : "none" }}>
-            <path d="M5 2.5 L9.5 7 L5 11.5" fill="none" stroke={C.soft}
-              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </button>
+      <Disclosure
+        open={open} onToggle={() => setOpen((v) => !v)}
+        // Every other row on this tab carries an icon; without one the raw log read as a
+        // different kind of thing rather than as the last card in the list.
+        left={<>
+          <Icon name="file" size={19} color={C.soft} strokeWidth={1.6} />
+          <span style={{ fontSize: 15, fontWeight: 600 }}>Raw log</span>
+        </>}
+        right={
+          <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
+            {rows.length.toLocaleString()} events
+          </span>
+        }
+      />
       {open && (
         <div style={{ paddingTop: 12 }}>
           <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 10, lineHeight: 1.5 }}>
@@ -808,7 +740,7 @@ function RawLog() {
           {[...rows].reverse().slice(0, 60).map((e) => (
             <div key={e.id} style={{
               display: "flex", gap: 8, padding: "6px 0",
-              borderTop: "1px solid rgba(255,255,255,.06)", fontSize: 11.5, ...num,
+              borderTop: RULE, fontSize: 11.5, ...num,
             }}>
               <span style={{ color: C.faint, width: 62, flex: "none" }}>{e.local_date}</span>
               <span style={{ color: ACCENT, width: 74, flex: "none" }}>{e.kind}</span>
@@ -826,4 +758,3 @@ function RawLog() {
   );
 }
 
-export { localTime, minutesOn };

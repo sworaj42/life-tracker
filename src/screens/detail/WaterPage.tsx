@@ -14,8 +14,10 @@ import { today, shiftDays, toMin } from "@/lib/date";
 import { waterDay, waterGoal } from "@/lib/calc/water";
 import { weightStats } from "@/lib/calc/weight";
 import { C, num } from "@/ui/tokens";
-import { CARD, DayStrip } from "@/ui/kit";
-import { BarChart, HourlyBars, Segmented, Stat, PageHead, caption } from "@/ui/charts";
+import {
+  CARD, RULE, DayStrip, PageHead, Segmented, Stat, SectionTitle, Meter, caption,
+} from "@/ui/kit";
+import { BarChart, HourlyBars } from "@/ui/charts";
 
 const ACCENT = "#5FB2E0";
 
@@ -71,9 +73,7 @@ export function WaterPage({ onBack }: { onBack: () => void }) {
       />
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-          Today, by time of day
-        </div>
+        <SectionTitle style={{ marginBottom: 12 }}>Today, by time of day</SectionTitle>
         {t.windows.map((w) => (
           <div key={w.label} style={{ marginBottom: 10 }}>
             <div style={{
@@ -85,14 +85,8 @@ export function WaterPage({ onBack }: { onBack: () => void }) {
                 {w.drank} / {w.target}
               </span>
             </div>
-            <div style={{
-              height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden",
-            }}>
-              <div style={{
-                height: "100%", background: ACCENT, borderRadius: 3,
-                width: `${w.target > 0 ? Math.min(100, (w.drank / w.target) * 100) : 0}%`,
-              }} />
-            </div>
+            <Meter color={ACCENT}
+              pct={w.target > 0 ? (w.drank / w.target) * 100 : 0} />
           </div>
         ))}
         <div style={caption}>
@@ -100,13 +94,13 @@ export function WaterPage({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 10 }}>
         <Stat label="Daily average" value={avg.toFixed(1)} unit=" glasses" />
         <Stat label="Days on goal" value={`${onGoal}`} unit={` / ${days}`} />
       </div>
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Glasses, each day</div>
+        <SectionTitle style={{ marginBottom: 12 }}>Glasses, each day</SectionTitle>
         <BarChart points={series} color={ACCENT} average={avg} />
         <div style={caption}>Last {days} days. Dashed line is the average.</div>
       </section>
@@ -116,14 +110,14 @@ export function WaterPage({ onBack }: { onBack: () => void }) {
           display: "flex", justifyContent: "space-between", alignItems: "center",
           gap: 8, flexWrap: "wrap", marginBottom: 12,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>When you drink it</span>
+          <SectionTitle>When you drink it</SectionTitle>
           <DayStrip date={day} onChange={setDay} compact />
         </div>
         <HourlyBars counts={hours} color={ACCENT} />
       </section>
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Today's goal</div>
+        <SectionTitle style={{ marginBottom: 10 }}>Today's goal</SectionTitle>
         <Row label={`Bodyweight × ${profile.water_ml_per_kg} ml`}
           value={kg ? `${Math.round(kg * profile.water_ml_per_kg)} ml` : "no weight logged"} />
         <Row label="Creatine allowance" value={`${profile.water_creatine_ml} ml`} />
@@ -143,7 +137,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   return (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8,
-      padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)", ...num,
+      padding: "7px 0", borderTop: RULE, ...num,
     }}>
       <span style={{ fontSize: 12.5, color: C.soft }}>{label}</span>
       <span style={{

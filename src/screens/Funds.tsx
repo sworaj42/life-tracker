@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import {
-  eventsOfKind, getProfile, saveProfile, logEvent, removeEvent, patchEvent,
+  eventsOfKind, getProfile, saveProfile, logEvent, removeEvent,
   getCategories, getCategoriesRaw, addCategory, renameCategory, hideCategory,
   countByCategory,
 } from "@/db/local";
@@ -27,22 +27,15 @@ import {
   DEFAULT_EXPENSE_CATS, DEFAULT_INCOME_CATS, rs, type Txn,
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip, DateField, useHold } from "@/ui/kit";
-import { BarChart } from "@/ui/charts";
+import {
+  CARD, DateField, DayStrip, Empty, FieldLabel, INPUT, Meter, PageHead, RULE, RemoveButton, SUB, SectionTitle, Segmented, caption, chip, cta, ghost, useHold,
+} from "@/ui/kit";
+import { Icon } from "@/ui/icons";
+import { BarChart, LineChart } from "@/ui/charts";
 
 const ACCENT = "#6FC29A";
 const ON_ACCENT = "#0F1A14";
 
-const SUB: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-  marginBottom: 10,
-};
 
 export function Funds() {
   const [page, setPage] = useState<"tab" | "balance">("tab");
@@ -78,7 +71,7 @@ function BudgetTab({
       }}>
         <BalanceTile bal={bal} runway={r} onAdd={onBalance} opening={profile.balance_opening} />
         <div style={SUB}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>Spent</div>
+          <FieldLabel style={{ marginBottom: 8 }}>Spent</FieldLabel>
           <SpentRow label="Today" value={spentOn(txns, t)} first />
           <SpentRow label="Week" value={b.spent} />
           <SpentRow label="Month" value={spentBetween(txns, t.slice(0, 8) + "01", t)} />
@@ -98,7 +91,7 @@ function SpentRow({ label, value, first }: { label: string; value: number; first
   return (
     <div style={{
       display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8,
-      padding: "5px 0", borderTop: first ? "none" : "1px solid rgba(255,255,255,.08)", ...num,
+      padding: "5px 0", borderTop: first ? "none" : RULE, ...num,
     }}>
       <span style={{ fontSize: 12, color: C.faint }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: 600 }}>{rs(value)}</span>
@@ -140,7 +133,7 @@ function BalanceTile({
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6,
       }}>
-        <span style={{ fontSize: 12, color: C.soft }}>Balance</span>
+        <FieldLabel>Balance</FieldLabel>
         <button onClick={onAdd} aria-label="Open balance" style={{
           width: 26, height: 26, borderRadius: 8, border: "1px solid rgba(255,255,255,.12)",
           background: "rgba(255,255,255,.07)", color: ACCENT, fontSize: 15, lineHeight: 1,
@@ -200,7 +193,7 @@ function WeeklyBudget({ profile, b }: { profile: Profile; b: ReturnType<typeof b
 
   return (
     <div style={SUB}>
-      <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>Weekly budget</div>
+      <FieldLabel style={{ marginBottom: 6 }}>Weekly budget</FieldLabel>
       {editing ? (
         <>
           <input autoFocus inputMode="numeric" defaultValue={String(profile.weekly_budget)}
@@ -223,15 +216,7 @@ function WeeklyBudget({ profile, b }: { profile: Profile; b: ReturnType<typeof b
           <div style={{ fontSize: 11.5, color: C.faint, marginTop: 6, ...num }}>
             {fmtDay(b.weekStart)} – {fmtDay(b.weekEnd)}
           </div>
-          <div style={{
-            height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3,
-            overflow: "hidden", marginTop: 10,
-          }}>
-            <div style={{
-              height: "100%", width: `${b.pct}%`,
-              background: b.over ? C.red : ACCENT, borderRadius: 3,
-            }} />
-          </div>
+          <Meter pct={b.pct} color={ACCENT} over={b.over} style={{ marginTop: 10 }} />
           <div style={{
             display: "flex", justifyContent: "space-between", gap: 8, marginTop: 7,
             fontSize: 11.5, ...num,
@@ -320,7 +305,7 @@ function CategoryPicker({
 
   return (
     <>
-      <div style={{ fontSize: 12, color: C.soft, margin: "10px 0 7px" }}>{label}</div>
+      <FieldLabel style={{ margin: "10px 0 7px" }}>{label}</FieldLabel>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {names.map((n) => (
           <Chip key={n} name={n} selected={value === n}
@@ -378,11 +363,11 @@ function CategoryPicker({
             aria-label="Rename category"
             style={{ ...INPUT, marginBottom: 10 }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto", gap: 8 }}>
             <button onClick={() => void doRename()} disabled={!rename?.trim()} style={{
               height: 38, borderRadius: 10, border: "none",
-              background: rename?.trim() ? ACCENT : "rgba(111,194,154,.25)",
-              color: ON_ACCENT, fontSize: 13, fontWeight: 600,
+              background: rename?.trim() ? ACCENT : "rgba(255,255,255,.08)",
+              color: rename?.trim() ? ON_ACCENT : C.faint, fontSize: 13, fontWeight: 600,
               cursor: rename?.trim() ? "pointer" : "not-allowed",
             }}>
               Rename
@@ -394,13 +379,9 @@ function CategoryPicker({
             }}>
               Hide
             </button>
-            <button onClick={() => { setMenu(null); setRename(null); }} aria-label="Close"
-              style={{
-                width: 38, height: 38, borderRadius: 10,
-                border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                color: C.soft, fontSize: 15, cursor: "pointer",
-              }}>
-              ×
+            <button onClick={() => { setMenu(null); setRename(null); }}
+              aria-label="Close category options" style={ghost(38, 10, C.soft)}>
+              <Icon name="close" size={16} strokeWidth={1.9} />
             </button>
           </div>
         </div>
@@ -423,14 +404,7 @@ function Chip({
     <button
       {...hold.bind}
       onClick={() => { if (!hold.held.current) onPick(); }}
-      style={{
-        border: `1px solid ${selected ? ACCENT : "rgba(255,255,255,.1)"}`,
-        borderRadius: 10,
-        background: selected ? ACCENT : "rgba(255,255,255,.05)",
-        color: selected ? ON_ACCENT : C.ink,
-        fontSize: 12.5, padding: "7px 11px", cursor: "pointer", minHeight: 34,
-        ...hold.style,
-      }}>
+      style={{ ...chip(selected, ACCENT), ...hold.style }}>
       {name}
     </button>
   );
@@ -440,7 +414,7 @@ function Chip({
 function ReceiptButtons() {
   return (
     <div style={{
-      display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12,
+      display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8, marginTop: 12,
     }}>
       {[
         { label: "Scan receipt", d: "M4 8V5.5A1.5 1.5 0 015.5 4H8 M16 4h2.5A1.5 1.5 0 0120 5.5V8 M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16 M8 20H5.5A1.5 1.5 0 014 18.5V16 M7 12h10" },
@@ -459,6 +433,10 @@ function ReceiptButtons() {
           {b.label}
         </button>
       ))}
+      <div style={{ ...caption, gridColumn: "1 / -1", marginTop: 2 }}>
+        Receipts are a later phase — the buttons are here so the row they will attach to
+        is already the right shape.
+      </div>
     </div>
   );
 }
@@ -491,8 +469,8 @@ function AddExpense() {
 
   return (
     <div style={SUB}>
-      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Add expense</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
+      <SectionTitle style={{ marginBottom: 12 }}>Add expense</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 8 }}>
         <input value={amount} onChange={(e) => setAmount(e.target.value)}
           inputMode="numeric" placeholder="Rs"
           style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
@@ -517,10 +495,10 @@ function AddExpense() {
       {/* The label states exactly what is about to be written, so the last check before
           committing is reading it back rather than trusting the fields. */}
       <button onClick={() => void save()} disabled={!ready} style={{
-        width: "100%", height: 42, marginTop: 12, borderRadius: 12, border: "none",
-        background: ready ? ACCENT : "rgba(111,194,154,.28)",
-        color: ready ? ON_ACCENT : "rgba(15,26,20,.65)",
-        fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "not-allowed", ...num,
+        ...cta(ACCENT, ON_ACCENT), marginTop: 12,
+        background: ready ? ACCENT : "rgba(255,255,255,.08)",
+        color: ready ? ON_ACCENT : C.faint,
+        ...num,
       }}>
         {ready
           ? `Add ${rs(n)} · ${cat || "Other"} · ${dayWord}`
@@ -536,7 +514,7 @@ function TxnRow({ t, onDelete }: { t: Txn; onDelete: () => void }) {
   return (
     <div style={{
       display: "flex", alignItems: "baseline", gap: 8, padding: "8px 0",
-      borderTop: "1px solid rgba(255,255,255,.08)",
+      borderTop: RULE,
     }}>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 13, color: C.ink }}>{t.label}</span>
@@ -552,12 +530,7 @@ function TxnRow({ t, onDelete }: { t: Txn; onDelete: () => void }) {
       }}>
         {t.kind === "income" ? "+" : ""}{rs(t.amount)}
       </span>
-      <button onClick={onDelete} aria-label="Remove" style={{
-        border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-        fontSize: 16, padding: "0 2px", lineHeight: 1,
-      }}>
-        ×
-      </button>
+      <RemoveButton onClick={onDelete} label={`Remove ${t.label}`} />
     </div>
   );
 }
@@ -572,14 +545,14 @@ function DaySpend({ txns }: { txns: Txn[] }) {
         display: "flex", justifyContent: "space-between", alignItems: "center",
         gap: 8, flexWrap: "wrap", marginBottom: 10,
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>Spent</span>
+        <SectionTitle>Spent</SectionTitle>
         <DayStrip date={date} onChange={setDate} compact />
       </div>
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, ...num }}>
         {rs(spentOn(txns, date))}
       </div>
       {rows.length === 0
-        ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 6 }}>Nothing logged.</div>
+        ? <Empty>Nothing logged.</Empty>
         : rows.map((t) => (
           <TxnRow key={t.id} t={t}
             onDelete={async () => { await removeEvent(t.id); bump(); }} />
@@ -595,7 +568,7 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
 
   return (
     <div style={SUB}>
-      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find a transaction</div>
+      <SectionTitle style={{ marginBottom: 10 }}>Find a transaction</SectionTitle>
       <input value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Description or category" style={INPUT} />
       <DateField value={date} max={today()} onChange={setDate} style={{ marginTop: 8 }} />
@@ -609,7 +582,7 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
       )}
       {(query || date) && (
         results.length === 0
-          ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 10 }}>Nothing found.</div>
+          ? <Empty>Nothing found.</Empty>
           : results.map((t) => (
             <TxnRow key={t.id} t={t}
               onDelete={async () => { await removeEvent(t.id); bump(); }} />
@@ -646,7 +619,7 @@ function Spending({ txns }: { txns: Txn[] }) {
         display: "flex", justifyContent: "space-between", alignItems: "center",
         margin: "4px 2px 10px",
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>Spending</span>
+        <SectionTitle>Spending</SectionTitle>
         <div style={{
           display: "flex", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16,
           padding: 2, background: "rgba(255,255,255,.06)",
@@ -672,12 +645,12 @@ function Spending({ txns }: { txns: Txn[] }) {
         gap: 10, marginBottom: 10,
       }}>
         <div style={{ ...SUB, marginBottom: 0 }}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>Spent, daily average</div>
+          <FieldLabel style={{ marginBottom: 2 }}>Spent, daily average</FieldLabel>
           <div style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.1, ...num }}>{rs(avg)}</div>
           <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3 }}>Last {days} days</div>
         </div>
         <div style={{ ...SUB, marginBottom: 0 }}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>Total</div>
+          <FieldLabel style={{ marginBottom: 2 }}>Total</FieldLabel>
           <div style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.1, ...num }}>{rs(total)}</div>
           <div style={{ fontSize: 11.5, color: C.faint, marginTop: 3, ...num }}>
             {txns.filter((x) => x.kind === "expense" && x.date >= from && x.date <= t).length} entries
@@ -687,11 +660,11 @@ function Spending({ txns }: { txns: Txn[] }) {
 
       {top.length > 0 && (
         <div style={SUB}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 6 }}>Top 3 spends</div>
+          <FieldLabel style={{ marginBottom: 6 }}>Top 3 spends</FieldLabel>
           {top.map((x) => (
             <div key={x.id} style={{
               display: "flex", justifyContent: "space-between", gap: 8, padding: "7px 0",
-              borderTop: "1px solid rgba(255,255,255,.08)", ...num,
+              borderTop: RULE, ...num,
             }}>
               <span style={{ fontSize: 12.5, color: C.ink, flex: 1, minWidth: 0 }}>
                 {x.label} <span style={{ color: C.faint }}>· {x.cat}</span>
@@ -703,7 +676,7 @@ function Spending({ txns }: { txns: Txn[] }) {
       )}
 
       <div style={SUB}>
-        <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>Spent, each day</div>
+        <FieldLabel style={{ marginBottom: 8 }}>Spent, each day</FieldLabel>
         <BarChart
           points={series.map((d) => ({ label: d.date.slice(5), value: d.amount }))}
           color={ACCENT}
@@ -717,7 +690,7 @@ function Spending({ txns }: { txns: Txn[] }) {
 
       {cats.length > 0 && (
         <div style={SUB}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 8 }}>By category</div>
+          <FieldLabel style={{ marginBottom: 8 }}>By category</FieldLabel>
           {cats.map((c) => (
             <div key={c.cat} style={{ marginBottom: 8 }}>
               <div style={{
@@ -727,13 +700,7 @@ function Spending({ txns }: { txns: Txn[] }) {
                 <span style={{ color: C.soft }}>{c.cat}</span>
                 <span style={{ color: C.ink }}>{rs(c.amount)}</span>
               </div>
-              <div style={{
-                height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden",
-              }}>
-                <div style={{
-                  height: "100%", width: `${c.pct}%`, background: ACCENT, borderRadius: 3,
-                }} />
-              </div>
+              <Meter pct={c.pct} color={ACCENT} />
             </div>
           ))}
         </div>
@@ -767,35 +734,23 @@ function BalancePage({
   const series = balanceSeries(txns, bal, days);
   const lo = Math.min(...series.map((s) => s.value));
   const hi = Math.max(...series.map((s) => s.value));
-  const span = Math.max(1, hi - lo);
-  const points = series
-    .map((s, i) => {
-      const x = series.length > 1 ? (i / (series.length - 1)) * 288 + 6 : 150;
-      const y = 100 - ((s.value - lo) / span) * 88;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
 
   const recent = txns.filter((t) => t.kind === "income").slice(0, 3);
 
   return (
-    <div style={{ animation: "rise .2s ease both" }}>
-      <button onClick={onBack} style={{
-        display: "flex", alignItems: "center", gap: 4, background: "none", border: "none",
-        color: ACCENT, fontSize: 14, cursor: "pointer", padding: 0, minHeight: 44,
-      }}>
-        <span style={{ fontSize: 20, lineHeight: 1 }}>‹</span> Funds
-      </button>
-      <h1 style={{ fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 4px" }}>
-        Balance
-      </h1>
-      <div style={{ fontSize: 26, fontWeight: 600, color: ACCENT, marginBottom: 14, ...num }}>
-        {rs(bal)}
-      </div>
+    <div>
+      <PageHead
+        title="Balance" back={onBack} backLabel="Funds" accent={ACCENT}
+        right={
+          <span style={{ fontSize: 22, fontWeight: 600, color: ACCENT, lineHeight: 1.1, ...num }}>
+            {rs(bal)}
+          </span>
+        }
+      />
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Add to balance</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
+        <SectionTitle style={{ marginBottom: 12 }}>Add to balance</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 8 }}>
           <input value={amount} onChange={(e) => setAmount(e.target.value)}
             inputMode="numeric" placeholder="Rs"
             style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
@@ -824,9 +779,9 @@ function BalancePage({
       </section>
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Recently added</div>
+        <SectionTitle style={{ marginBottom: 4 }}>Recently added</SectionTitle>
         {recent.length === 0
-          ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 6 }}>Nothing added yet.</div>
+          ? <Empty>Nothing added yet.</Empty>
           : recent.map((t) => (
             <TxnRow key={t.id} t={t}
               onDelete={async () => { await removeEvent(t.id); bump(); }} />
@@ -839,43 +794,27 @@ function BalancePage({
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>Balance over time</span>
-          <div style={{
-            display: "flex", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16,
-            padding: 2, background: "rgba(255,255,255,.06)",
-          }}>
-            {/* This selector controls the graph only — nothing else on the page. */}
-            {(["week", "month", "year"] as const).map((s) => (
-              <button key={s} onClick={() => setScope(s)} style={{
-                border: "none", borderRadius: 13, cursor: "pointer",
-                background: scope === s ? ACCENT : "transparent",
-                color: scope === s ? ON_ACCENT : C.soft,
-                fontWeight: 500, fontSize: 12.5, padding: "6px 10px", minHeight: 30,
-                textTransform: "capitalize",
-              }}>
-                {s}
-              </button>
-            ))}
-          </div>
+          <SectionTitle>Balance over time</SectionTitle>
+          {/* This selector controls the graph only — nothing else on the page. */}
+          <Segmented value={scope} options={["week", "month", "year"] as const}
+            onChange={setScope} accent={ACCENT} />
         </div>
-        <svg viewBox="0 0 300 110" preserveAspectRatio="none"
-          style={{ width: "100%", height: 130, display: "block" }}>
-          <polyline points={points} fill="none" stroke={ACCENT} strokeWidth="2"
-            strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </svg>
-        <div style={{
-          display: "flex", justifyContent: "space-between", fontSize: 11, color: C.faint,
-          marginTop: 4, ...num,
-        }}>
-          <span>{rs(lo)}</span>
-          <span>{rs(hi)}</span>
+        <LineChart
+          points={series.map((s) => ({ label: s.date.slice(5), value: s.value }))}
+          color={ACCENT}
+          format={(v) => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v)))}
+          height={140}
+          xLabels
+        />
+        <div style={caption}>
+          Ran between {rs(lo)} and {rs(hi)} over the last{" "}
+          {scope === "week" ? "7 days" : scope === "month" ? "30 days" : "year"}.
         </div>
       </section>
     </div>
   );
 }
 
-export { patchEvent };
 
 /** Income search. The expense side has the same thing; both read the same rows. */
 function FindEntry({ txns }: { txns: Txn[] }) {
@@ -886,7 +825,7 @@ function FindEntry({ txns }: { txns: Txn[] }) {
 
   return (
     <section style={CARD}>
-      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Find an entry</div>
+      <SectionTitle style={{ marginBottom: 10 }}>Find an entry</SectionTitle>
       <input value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Description or source" style={INPUT} />
       <DateField value={date} max={today()} onChange={setDate} style={{ marginTop: 8 }} />
@@ -900,7 +839,7 @@ function FindEntry({ txns }: { txns: Txn[] }) {
       )}
       {(query || date) && (
         results.length === 0
-          ? <div style={{ fontSize: 12, color: C.faint, paddingTop: 10 }}>Nothing found.</div>
+          ? <Empty>Nothing found.</Empty>
           : results.map((t) => (
             <TxnRow key={t.id} t={t}
               onDelete={async () => { await removeEvent(t.id); bump(); }} />

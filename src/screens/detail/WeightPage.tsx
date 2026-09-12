@@ -23,23 +23,23 @@ import {
   readings, weightStats, rollingSeries, goalProgress, bmi, deficitVsScale,
 } from "@/lib/calc/weight";
 import { C, num } from "@/ui/tokens";
-import { INPUT } from "@/ui/kit";
-import { LineChart, Segmented, PageHead, caption } from "@/ui/charts";
+import {
+  DateField, Empty, FieldLabel, INPUT, Meter, PageHead, RULE, RemoveButton, SUB, SectionTitle, Segmented, caption, ghost,
+} from "@/ui/kit";
+import { Icon } from "@/ui/icons";
+import { LineChart } from "@/ui/charts";
 
 const ACCENT = "#C9BE93";
 const ON_ACCENT = "#1A170F";
 
-/** The detail pages use the sub-card recipe, not the heavier tab card. */
-const SUB: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-  marginBottom: 10,
-};
+
+/** "21 Nov", or the raw value if an older row held free text like "1 Mar". */
+function prettyDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
 
 export function WeightPage({ onBack }: { onBack: () => void }) {
   const [scope, setScope] = useState<"week" | "month" | "year">("month");
@@ -94,7 +94,7 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
           display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 10, minHeight: 30,
         }}>
-          <span style={{ fontSize: 12, color: C.soft }}>Goal</span>
+          <FieldLabel>Goal</FieldLabel>
           {editingTarget ? (
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input autoFocus inputMode="decimal" defaultValue={String(profile.weight_target)}
@@ -106,21 +106,15 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
                   background: "rgba(255,255,255,.05)", padding: "5px 8px", fontSize: 13,
                   color: C.ink, outline: "none", ...num,
                 }} />
-              <input defaultValue={profile.target_date ?? ""}
-                onChange={(e) => setTargetBy(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void commitTarget()}
-                placeholder="by 1 Mar" aria-label="Target date"
-                style={{
-                  width: 78, border: "1px solid rgba(255,255,255,.12)", borderRadius: 9,
-                  background: "rgba(255,255,255,.05)", padding: "5px 8px", fontSize: 13,
-                  color: C.ink, outline: "none",
-                }} />
-              <button onClick={() => void commitTarget()} aria-label="Save target" style={{
-                width: 26, height: 26, borderRadius: 8, border: "1px solid rgba(255,255,255,.12)",
-                background: "rgba(255,255,255,.07)", color: C.soft, fontSize: 14,
-                cursor: "pointer", display: "grid", placeItems: "center", padding: 0,
-              }}>
-                ×
+              {/* A real date, not free text. This field wrote "1 Mar" while Settings
+                  wrote "2026-03-01" into the SAME column, so whichever screen you had
+                  not used last showed an empty box or a date it could not parse. */}
+              <DateField value={targetBy} onChange={setTargetBy} min={today()}
+                ariaLabel="Target date" compact style={{ width: 132 }} />
+              {/* It saves, so it is a tick — a × here read as "discard what I typed". */}
+              <button onClick={() => void commitTarget()} aria-label="Save target"
+                style={ghost(28, 8, ACCENT)}>
+                <Icon name="check" size={14} strokeWidth={2.2} />
               </button>
             </span>
           ) : (
@@ -133,17 +127,12 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
               color: ACCENT, fontSize: 12.5, ...num,
             }}>
               {profile.weight_target.toFixed(1)} kg
-              {profile.target_date ? ` by ${profile.target_date}` : ""} · change
+              {profile.target_date ? ` by ${prettyDate(profile.target_date)}` : ""} · change
             </button>
           )}
         </div>
 
-        <div style={{
-          height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3,
-          overflow: "hidden", marginBottom: 6,
-        }}>
-          <div style={{ height: "100%", width: `${goal.pct}%`, background: ACCENT, borderRadius: 3 }} />
-        </div>
+        <Meter pct={goal.pct} color={ACCENT} style={{ marginBottom: 6 }} />
         <div style={{
           display: "flex", justifyContent: "space-between", fontSize: 12, color: C.soft, ...num,
         }}>
@@ -162,9 +151,9 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
 
       {/* Record weight — a labelled Save button, not a bare plus. */}
       <div style={SUB}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Record weight</div>
+        <SectionTitle style={{ marginBottom: 12 }}>Record weight</SectionTitle>
         <div style={{
-          display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginBottom: 8,
+          display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, marginBottom: 8,
         }}>
           <input inputMode="decimal" type="number" step="0.1" value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -210,7 +199,7 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>Trend</span>
+          <SectionTitle>Trend</SectionTitle>
           <Segmented value={scope} options={["week", "month", "year"] as const}
             onChange={setScope} accent={ACCENT} />
         </div>
@@ -231,10 +220,8 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
 
       {check && (
         <div style={SUB}>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            Deficit vs the scale, last 4 weeks
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <SectionTitle style={{ marginBottom: 12 }}>Deficit vs the scale, last 4 weeks</SectionTitle>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
             <div>
               <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>Predicted</div>
               <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.1, ...num }}>
@@ -258,9 +245,9 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
       )}
 
       <div style={SUB}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Recent readings</div>
+        <SectionTitle style={{ marginBottom: 6 }}>Recent readings</SectionTitle>
         {rs.length === 0 ? (
-          <div style={{ fontSize: 12, color: C.faint, paddingTop: 6 }}>Nothing recorded yet.</div>
+          <Empty>Nothing recorded yet.</Empty>
         ) : (
           [...rs].reverse().slice(0, 12).map((r, i, arr) => {
             const prev = arr[i + 1];
@@ -268,7 +255,7 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
             return (
               <div key={r.id} style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "8px 0",
-                borderTop: "1px solid rgba(255,255,255,.08)",
+                borderTop: RULE,
               }}>
                 <span style={{ fontSize: 12, color: C.faint, width: 64, ...num }}>
                   {r.date === today() ? "Today" : r.date.slice(5)}
@@ -282,13 +269,8 @@ export function WeightPage({ onBack }: { onBack: () => void }) {
                 }}>
                   {d == null ? "" : `${d > 0 ? "+" : ""}${d.toFixed(1)}`}
                 </span>
-                <button onClick={async () => { await removeEvent(r.id); bump(); }}
-                  aria-label="Remove reading" style={{
-                    border: "none", background: "transparent", color: C.faint,
-                    cursor: "pointer", fontSize: 16, padding: "0 2px",
-                  }}>
-                  ×
-                </button>
+                <RemoveButton onClick={async () => { await removeEvent(r.id); bump(); }}
+                  label={`Remove the ${r.date} reading`} />
               </div>
             );
           })

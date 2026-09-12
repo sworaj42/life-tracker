@@ -26,8 +26,10 @@ import {
   MEALS, maintenance, targets, dayFood, dayBurn, portionLabel,
   type DayFood, type FoodEntry, type Maintenance, type Targets,
 } from "@/lib/calc/calories";
-import { C, num } from "@/ui/tokens";
-import { CARD, TILE, TitleLink, DayStrip, MealIcon, MEAL_TILE_ORDER } from "@/ui/kit";
+import { C, H, num } from "@/ui/tokens";
+import {
+  CARD, DayStrip, Empty, MEAL_TILE_ORDER, MealIcon, Meter, RULE, RemoveButton, SectionTitle, TILE, TitleLink, chip,
+} from "@/ui/kit";
 import { CaloriesPage } from "./detail/CaloriesPage";
 import { FoodPage } from "./detail/FoodPage";
 import { MealPage } from "./detail/MealPage";
@@ -92,7 +94,7 @@ export function Fuel() {
 
   return (
     <>
-      <DayHeader date={date} setDate={setDate} food={food} goal={goal} />
+      <DayHeader date={date} setDate={setDate} />
       <CaloriesCard date={date} burn={burn} food={food} maint={maint} goal={goal}
         onOpen={() => setPage({ at: "calories" })} />
       <FoodCard
@@ -115,8 +117,8 @@ export function Fuel() {
  * looking at now.
  */
 function DayHeader({
-  date, setDate, food, goal,
-}: { date: string; setDate: (d: string) => void; food: DayFood; goal: Targets }) {
+  date, setDate,
+}: { date: string; setDate: (d: string) => void }) {
   const isToday = date === today();
   return (
     <div style={{
@@ -124,20 +126,18 @@ function DayHeader({
       gap: 10, flexWrap: "wrap", margin: "0 2px 12px",
     }}>
       <DayStrip date={date} onChange={setDate} compact />
-      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {!isToday && (
-          <button onClick={() => setDate(today())} style={{
-            border: "1px solid rgba(226,180,97,.35)", borderRadius: 9,
-            background: "rgba(226,180,97,.12)", color: ACCENT, fontSize: 12,
-            padding: "6px 10px", cursor: "pointer", minHeight: 30,
-          }}>
-            Today
-          </button>
-        )}
-        <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
-          {food.kcal.toLocaleString()} / {goal.kcal.toLocaleString()}
-        </span>
-      </span>
+      {/* The running total used to sit here as well, which left four separate things
+          fighting over one 430px row — and it says the same thing as the meter on the
+          card directly below it, twice, eighty pixels apart. */}
+      {!isToday && (
+        <button onClick={() => setDate(today())} style={{
+          ...chip(false, ACCENT), color: ACCENT,
+          border: "1px solid rgba(226,180,97,.35)", background: "rgba(226,180,97,.12)",
+          minHeight: H.arrow, fontSize: 12,
+        }}>
+          Back to today
+        </button>
+      )}
     </div>
   );
 }
@@ -261,12 +261,7 @@ function FoodCard({
         </span>
       </div>
 
-      <div style={{
-        height: 8, background: "rgba(255,255,255,.1)", borderRadius: 4,
-        overflow: "hidden", marginBottom: 12,
-      }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: over ? C.red : ACCENT, borderRadius: 4 }} />
-      </div>
+      <Meter pct={pct} color={ACCENT} over={over} height={8} style={{ marginBottom: 12 }} />
 
       {/* Bars, not a line of text. A macro is a number against a target, and three
           numbers against three targets read as six numbers until you draw them. */}
@@ -282,7 +277,9 @@ function FoodCard({
           const kcal = Math.round(food.byMeal[key].reduce((s, e) => s + (e.kcal || 0), 0));
           const has = kcal > 0;
           return (
-            <button key={key} onClick={() => onMeal(key)} style={{
+            <button key={key} onClick={() => onMeal(key)}
+              aria-label={`Open ${label.toLowerCase()}${has ? `, ${kcal} calories` : ", nothing logged"}`}
+              style={{
               display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
               padding: "14px 6px 12px", borderRadius: 14,
               border: `1px solid ${has ? "rgba(226,180,97,.35)" : "rgba(255,255,255,.07)"}`,
@@ -309,21 +306,25 @@ function FoodCard({
   );
 }
 
+/**
+ * One macro against its target.
+ *
+ * The bar keeps the macro's OWN colour whether or not you are over it. Turning it red
+ * would be unreadable here, because protein's colour already is red — every protein bar
+ * looked permanently over budget. Over shows in the number instead, which is where the
+ * two figures being compared already sit.
+ */
 function MacroBar({
   label, value, target, color,
 }: { label: string; value: number; target: number; color: string }) {
   const pct = target > 0 ? Math.min(100, (value / target) * 100) : 0;
+  const over = target > 0 && value > target;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 12, color: C.soft, width: 52, flex: "none" }}>{label}</span>
-      <span style={{
-        flex: 1, height: 7, background: "rgba(255,255,255,.1)", borderRadius: 4,
-        overflow: "hidden",
-      }}>
-        <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 4 }} />
-      </span>
+      <Meter pct={pct} color={color} height={7} style={{ flex: 1 }} />
       <span style={{ fontSize: 11.5, color: C.faint, width: 66, textAlign: "right", flex: "none", ...num }}>
-        <span style={{ color: C.ink, fontWeight: 600 }}>{value}</span>/{target}g
+        <span style={{ color: over ? C.red : C.ink, fontWeight: 600 }}>{value}</span>/{target}g
       </span>
     </div>
   );
@@ -345,7 +346,7 @@ function AteCard({ food }: { food: DayFood }) {
         display: "flex", justifyContent: "space-between", alignItems: "baseline",
         gap: 10, marginBottom: 4,
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: C.ink }}>What you ate</span>
+        <SectionTitle>What you ate</SectionTitle>
         <span style={{ fontSize: 12, color: C.faint, ...num }}>
           {food.entries.length
             ? `P ${food.protein} · C ${food.carbs} · F ${food.fat} g`
@@ -354,9 +355,7 @@ function AteCard({ food }: { food: DayFood }) {
       </div>
 
       {groups.length === 0 ? (
-        <div style={{ fontSize: 12, color: C.faint, paddingTop: 6 }}>
-          Nothing logged for this day.
-        </div>
+        <Empty>Nothing logged for this day.</Empty>
       ) : (
         groups.map((g) => (
           <div key={g.key} style={{ marginTop: 12 }}>
@@ -406,7 +405,7 @@ function AteRow({ entry, unfiled }: { entry: FoodEntry; unfiled: boolean }) {
   };
 
   return (
-    <div style={{ borderTop: "1px solid rgba(255,255,255,.08)", padding: "7px 0" }}>
+    <div style={{ borderTop: RULE, padding: "7px 0" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: 13, color: C.ink, flex: 1, minWidth: 0 }}>
           {entry.name}
@@ -424,12 +423,7 @@ function AteRow({ entry, unfiled }: { entry: FoodEntry; unfiled: boolean }) {
             Remove?
           </button>
         ) : (
-          <button onClick={ask} aria-label={`Remove ${entry.name}`} style={{
-            border: "none", background: "transparent", color: C.faint,
-            cursor: "pointer", fontSize: 16, padding: "0 2px", lineHeight: 1,
-          }}>
-            ×
-          </button>
+          <RemoveButton onClick={ask} label={`Remove ${entry.name}`} />
         )}
       </div>
 
@@ -437,11 +431,8 @@ function AteRow({ entry, unfiled }: { entry: FoodEntry; unfiled: boolean }) {
         filing ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, paddingTop: 7 }}>
             {MEALS.map((m) => (
-              <button key={m.key} onClick={() => void file(m.key)} style={{
-                border: "1px solid rgba(255,255,255,.12)", borderRadius: 9,
-                background: "rgba(255,255,255,.05)", color: C.soft, fontSize: 11.5,
-                padding: "5px 8px", cursor: "pointer", minHeight: 30,
-              }}>
+              <button key={m.key} onClick={() => void file(m.key)}
+                style={{ ...chip(false, ACCENT), fontSize: 11.5, minHeight: H.arrow }}>
                 {m.label}
               </button>
             ))}

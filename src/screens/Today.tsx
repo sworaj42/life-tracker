@@ -15,13 +15,17 @@ import {
   replaceOnDate,
 } from "@/db/local";
 import { useLive, bump } from "@/db/store";
-import { DEFAULT_PROFILE, ASLEEP, type AnyEvent, type Profile, type SleepValue } from "@/db/types";
+import { DEFAULT_PROFILE, type AnyEvent, type Profile } from "@/db/types";
 import { today, localTime, nowMin, dur } from "@/lib/date";
 import { waterDay } from "@/lib/calc/water";
 import { coffeeDay } from "@/lib/calc/coffee";
 import { weightStats } from "@/lib/calc/weight";
-import { C, STAGE, num } from "@/ui/tokens";
-import { CARD, TILE, INPUT, ghost, TitleLink, DayStrip, useHold } from "@/ui/kit";
+import { nightOf, hm } from "@/lib/calc/sleep";
+import { C, H, STAGE, num, onAccent } from "@/ui/tokens";
+import {
+  CARD, DayStrip, Empty, INPUT, Meter, RULE, RemoveButton, SectionTitle, TILE, TitleLink, ghost, useHold,
+} from "@/ui/kit";
+import { Icon } from "@/ui/icons";
 import { SleepPage } from "./detail/SleepPage";
 import { WeightPage } from "./detail/WeightPage";
 import { WaterPage } from "./detail/WaterPage";
@@ -53,9 +57,12 @@ export function Today() {
 
   return (
     <>
-      <SleepCard segments={sleep} onOpen={() => setPage("sleep")} />
+      <SleepCard segments={sleep} date={d} onOpen={() => setPage("sleep")} />
       <WeightCard stats={stats} onOpen={() => setPage("weight")} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div className="half-grid" style={{
+        display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10,
+        marginBottom: 10, alignItems: "stretch",
+      }}>
         <WaterCard day={w} onOpen={() => setPage("water")} />
         <CoffeeCard day={cof} profile={profile} onOpen={() => setPage("coffee")} />
       </div>
@@ -67,53 +74,57 @@ export function Today() {
 
 // ---------------------------------------------------------------------------
 
-const hm = (mins: number) =>
-  `${Math.floor(mins / 60)}h ${String(Math.round(mins) % 60).padStart(2, "0")}m`;
-
 /** "45m", "2h 05m" — a duration short enough to sit at the end of a log row. */
 const shortDur = (mins: number) =>
   mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
 
-function SleepCard({ segments, onOpen }: { segments: AnyEvent[]; onOpen: () => void }) {
-  const segs = segments.map((e) => {
-    const p = e.payload as { start: string; end: string; value: SleepValue };
-    return { ...p, mins: dur(p.start, p.end) };
-  });
-  const asleep = segs.filter((s) => ASLEEP.includes(s.value)).reduce((a, s) => a + s.mins, 0);
-  // Only the three asleep stages get a legend entry, each with its duration.
-  const stages = ASLEEP.map((v) => ({
-    label: STAGE[v].label,
-    color: STAGE[v].color,
-    mins: segs.filter((s) => s.value === v).reduce((a, s) => a + s.mins, 0),
-  })).filter((s) => s.mins > 0);
+function SleepCard({
+  segments, date, onOpen,
+}: { segments: AnyEvent[]; date: string; onOpen: () => void }) {
+  const night = nightOf(segments, date);
+  // Only the three asleep stages get a legend entry, each with its duration. `awake` and
+  // `inBed` are in the bar, because a broken night should look broken, but they are not
+  // sleep and do not get a number.
+  const stages = (["asleepDeep", "asleepCore", "asleepREM"] as const)
+    .map((v) => ({
+      label: STAGE[v].label,
+      color: STAGE[v].color,
+      mins: night?.segments.filter((s) => s.value === v).reduce((a, s) => a + s.mins, 0) ?? 0,
+    }))
+    .filter((s) => s.mins > 0);
 
   return (
     <section style={{ ...CARD, padding: "10px 16px 16px" }}>
-      <div style={{ marginBottom: 2 }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        gap: 10, minHeight: 44,
+      }}>
         <TitleLink label="Sleep" color="#8FB6E8" onClick={onOpen} minHeight={44} />
+        {night && (
+          <span style={{ fontSize: 12.5, color: C.soft, whiteSpace: "nowrap", ...num }}>
+            {fmt(night.bed)}–{fmt(night.wake)}
+          </span>
+        )}
       </div>
-      {segs.length === 0 ? (
-        <div style={{ fontSize: 12, color: C.faint, paddingTop: 4 }}>
+
+      {!night ? (
+        <div style={{ fontSize: 12.5, color: C.faint, paddingTop: 2, lineHeight: 1.5 }}>
           No sleep recorded. This comes from Health.
         </div>
       ) : (
         <div style={{ minWidth: 0 }}>
-          <div style={{
-            display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6,
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, ...num }}>{hm(asleep)} asleep</span>
-            <span style={{ fontSize: 12.5, color: C.soft, ...num }}>
-              {segs[0]?.start}–{segs[segs.length - 1]?.end}
-            </span>
+          <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.1, marginBottom: 9, ...num }}>
+            {hm(night.asleep)}
+            <span style={{ fontSize: 13, fontWeight: 400, color: C.soft }}> asleep</span>
           </div>
-          <div style={{ display: "flex", height: 16, borderRadius: 3, overflow: "hidden", gap: 1 }}>
-            {segs.map((s, i) => (
-              <div key={i} title={STAGE[s.value].label}
+          <div style={{ display: "flex", height: 16, borderRadius: 4, overflow: "hidden", gap: 1 }}>
+            {night.segments.map((s, i) => (
+              <div key={i} title={`${STAGE[s.value].label} ${hm(s.mins)}`}
                 style={{ flex: s.mins, background: STAGE[s.value].color }} />
             ))}
           </div>
           <div style={{
-            display: "flex", gap: 14, marginTop: 7, fontSize: 12.5, color: C.soft, flexWrap: "wrap",
+            display: "flex", gap: 14, marginTop: 9, fontSize: 12.5, color: C.soft, flexWrap: "wrap",
           }}>
             {stages.map((s) => (
               <span key={s.label} style={{
@@ -130,22 +141,29 @@ function SleepCard({ segments, onOpen }: { segments: AnyEvent[]; onOpen: () => v
   );
 }
 
+const fmt = (mins: number) =>
+  `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+
 // ---------------------------------------------------------------------------
+
+const WEIGHT = C.body;
 
 function WeightCard({
   stats, onOpen,
 }: { stats: ReturnType<typeof weightStats>; onOpen: () => void }) {
   const [draft, setDraft] = useState("");
+  const kg = parseFloat(draft);
+  const ready = Number.isFinite(kg) && kg >= 20 && kg <= 300;
+
   const save = async () => {
-    const kg = parseFloat(draft);
-    if (!kg || kg < 20 || kg > 300) return;
+    if (!ready) return;
     await replaceOnDate("weight", today(), { kg }); // saving twice in a day replaces
     setDraft("");
     bump();
   };
 
   const delta = stats.delta;
-  const deltaColor = delta == null ? C.faint : delta < 0 ? C.body : delta > 0 ? C.red : C.ink;
+  const deltaColor = delta == null ? C.faint : delta < 0 ? WEIGHT : delta > 0 ? C.red : C.ink;
 
   return (
     <section style={CARD}>
@@ -153,39 +171,39 @@ function WeightCard({
         display: "flex", justifyContent: "space-between", alignItems: "center",
         gap: 10, marginBottom: 12, minHeight: 42,
       }}>
-        <TitleLink label="Weight" color={C.body} onClick={onOpen} />
-        <div style={{ display: "flex", gap: 8, flex: 1, minWidth: 0, maxWidth: 200 }}>
+        <TitleLink label="Weight" color={WEIGHT} onClick={onOpen} />
+        <div style={{ display: "flex", gap: 8, flex: 1, minWidth: 0, maxWidth: 210 }}>
           <input
-            inputMode="decimal" type="number" step="0.1"
+            inputMode="decimal" type="number" step="0.1" aria-label="This morning's weight"
             placeholder={stats.latest != null ? `Logged ${stats.latest.toFixed(1)} kg` : "This morning"}
             value={draft} onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void save()}
-            style={{
-              flex: 1, minWidth: 0, border: "1px solid rgba(255,255,255,.1)", borderRadius: 11,
-              background: "rgba(255,255,255,.05)", padding: "9px 11px", fontSize: 13.5,
-              color: C.ink, outline: "none",
-            }}
+            style={{ ...INPUT, minHeight: 38, padding: "9px 11px", fontSize: 13.5 }}
           />
-          <button onClick={() => void save()} aria-label="Record weight" style={{
-            width: 40, height: 38, borderRadius: 11, border: "none", background: C.body,
-            color: "#1A170F", fontSize: 18, lineHeight: 1, cursor: "pointer",
+          {/* Dimmed until the number is plausible, so the affordance says whether the
+              tap will do anything before you make it. */}
+          <button onClick={() => void save()} aria-label="Record weight" disabled={!ready} style={{
+            width: 40, height: 38, borderRadius: 11, border: "none",
+            background: ready ? WEIGHT : "rgba(255,255,255,.08)",
+            color: ready ? onAccent(WEIGHT) : C.faint,
+            cursor: ready ? "pointer" : "not-allowed",
             display: "grid", placeItems: "center", padding: 0, flex: "none",
           }}>
-            +
+            <Icon name="plus" size={17} strokeWidth={2.2} />
           </button>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
         <div style={TILE}>
           <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>7-day average</div>
-          <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.1, ...num }}>
+          <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.15, ...num }}>
             {stats.avg7 != null ? stats.avg7.toFixed(2) : "—"}
             <span style={{ fontSize: 12, fontWeight: 400, color: C.soft }}> kg</span>
           </div>
         </div>
         <div style={TILE}>
           <div style={{ fontSize: 12, color: C.soft, marginBottom: 2 }}>vs week before</div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: deltaColor, lineHeight: 1.1, ...num }}>
+          <div style={{ fontSize: 20, fontWeight: 600, color: deltaColor, lineHeight: 1.15, ...num }}>
             {delta != null ? `${delta > 0 ? "+" : ""}${delta.toFixed(2)}` : "—"}
             <span style={{ fontSize: 12, fontWeight: 400, color: C.soft }}> kg</span>
           </div>
@@ -196,6 +214,30 @@ function WeightCard({
 }
 
 // ---------------------------------------------------------------------------
+
+/** The two half-width cards share a shape: header, figure, then three rows. */
+const HALF_CARD: React.CSSProperties = {
+  ...CARD, padding: "12px 14px 14px", marginBottom: 0,
+  display: "flex", flexDirection: "column",
+};
+
+function CardRow({
+  label, value, color, first,
+}: { label: string; value: string; color?: string; first?: boolean }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8,
+      padding: "6.5px 0", borderTop: first ? "none" : RULE, ...num,
+    }}>
+      <span style={{ fontSize: 12, color: C.soft }}>{label}</span>
+      <span style={{
+        fontSize: 12.5, fontWeight: 600, color: color ?? C.ink, whiteSpace: "nowrap",
+      }}>
+        {value}
+      </span>
+    </div>
+  );
+}
 
 function WaterCard({
   day, onOpen,
@@ -214,56 +256,58 @@ function WaterCard({
   const fillY = 43 - Math.min(1, day.goal ? day.glasses / day.goal : 0) * 40;
 
   return (
-    <section style={{
-      ...CARD, padding: "14px 14px", marginBottom: 0, display: "flex", flexDirection: "column",
-    }}>
+    <section style={HALF_CARD}>
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
+        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10,
       }}>
         <TitleLink label="Water" color={C.water} onClick={onOpen} />
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => void add(-1)} aria-label="Remove a glass" style={ghost(36, 11, C.water)}>−</button>
-          <button onClick={() => void add(1)} aria-label="Add a glass" style={ghost(36, 11, C.water)}>+</button>
+          <button onClick={() => void add(-1)} aria-label="Remove a glass"
+            disabled={day.glasses === 0}
+            style={{ ...ghost(H.icon, 11, C.water), opacity: day.glasses === 0 ? 0.4 : 1 }}>
+            <Icon name="minus" size={15} strokeWidth={2.2} />
+          </button>
+          <button onClick={() => void add(1)} aria-label="Add a glass" style={ghost(H.icon, 11, C.water)}>
+            <Icon name="plus" size={15} strokeWidth={2.2} />
+          </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         <svg width="30" height="42" viewBox="0 0 34 46" aria-hidden style={{ flex: "none", display: "block" }}>
           <clipPath id="waterClip"><path d="M5 3 L29 3 L25.5 43 L8.5 43 Z" /></clipPath>
           <rect x="0" y={fillY} width="34" height="46" fill={C.water} opacity=".85"
-            clipPath="url(#waterClip)" style={{ transition: "y .3s ease" }} />
+            clipPath="url(#waterClip)"
+            style={{ transition: "y var(--t-page) var(--ease)" }} />
           <path d="M5 3 L29 3 L25.5 43 L8.5 43 Z" fill="none"
             stroke="rgba(255,255,255,.35)" strokeWidth="1.6" strokeLinejoin="round" />
           {over && <circle cx="17" cy="2" r="2" fill={C.water}
             style={{ animation: "drip .9s ease-in-out infinite" }} />}
         </svg>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 24, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.01em", ...num }}>
             {day.glasses}
             <span style={{ fontSize: 13, fontWeight: 400, color: C.soft }}> / {day.goal}</span>
           </div>
-          <div style={{ fontSize: 12, color: C.soft, marginTop: 4 }}>glasses</div>
+          <div style={{ fontSize: 11.5, color: C.soft, marginTop: 5, ...num }}>
+            {day.litres.toFixed(2)} of {day.goalLitres.toFixed(2)} L
+          </div>
         </div>
       </div>
 
+      <Meter pct={day.pct} color={over ? "#8FD0F0" : C.water} height={5} style={{ marginBottom: 8 }} />
+
+      {/*
+        The three sub-goals, which is what the card had room for and nothing in it: it
+        used to end with a meter and a stretch of empty space, because the coffee card
+        beside it is three rows taller. Now both cards are a figure and three rows.
+      */}
       <div style={{ marginTop: "auto" }}>
-        <div style={{
-          height: 6, background: "rgba(255,255,255,.1)", borderRadius: 3,
-          overflow: "hidden", marginBottom: 6,
-        }}>
-          <div style={{
-            height: "100%", width: `${Math.min(100, day.pct)}%`,
-            background: over ? "#8FD0F0" : C.water, borderRadius: 3,
-          }} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, ...num }}>
-          <span style={{ color: C.ink, fontWeight: 500, whiteSpace: "nowrap" }}>
-            {day.litres.toFixed(2)} L
-          </span>
-          <span style={{ color: C.faint, whiteSpace: "nowrap" }}>
-            of {day.goalLitres.toFixed(2)} L
-          </span>
-        </div>
+        {day.windows.map((w, i) => (
+          <CardRow key={w.label} label={w.label} first={i === 0}
+            value={`${w.drank} / ${w.target}`}
+            color={w.drank >= w.target ? C.water : C.ink} />
+        ))}
       </div>
     </section>
   );
@@ -289,28 +333,33 @@ function CoffeeCard({
   const bedColor = day.bedMg > profile.sleep_mg_threshold ? C.red : C.ink;
 
   return (
-    <section style={{
-      ...CARD, padding: "14px 14px", marginBottom: 0, display: "flex", flexDirection: "column",
-    }}>
+    <section style={HALF_CARD}>
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
+        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10,
       }}>
         <TitleLink label="Coffee" color={C.coffee} onClick={onOpen} />
         <div style={{ display: "flex", gap: 6 }}>
-          {day.cups > 0 && (
-            <button onClick={() => void undo()} aria-label="Undo last cup" style={ghost(36, 11, C.coffee)}>−</button>
-          )}
-          <button onClick={() => void add()} aria-label="Add a cup" style={ghost(36, 11, C.coffee)}>+</button>
+          {/* Kept mounted rather than removed at zero cups, so the + does not jump
+              sideways the moment you log the first one. */}
+          <button onClick={() => void undo()} aria-label="Undo last cup"
+            disabled={day.cups === 0}
+            style={{ ...ghost(H.icon, 11, C.coffee), opacity: day.cups === 0 ? 0.4 : 1 }}>
+            <Icon name="minus" size={15} strokeWidth={2.2} />
+          </button>
+          <button onClick={() => void add()} aria-label="Add a cup" style={ghost(H.icon, 11, C.coffee)}>
+            <Icon name="plus" size={15} strokeWidth={2.2} />
+          </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         <svg width="34" height="42" viewBox="0 0 38 46" aria-hidden style={{ flex: "none", display: "block" }}>
           <clipPath id="mugClip">
             <path d="M4 8 H26 V32 C26 37 22 41 17 41 H13 C8 41 4 37 4 32 Z" />
           </clipPath>
           <rect x="0" y={fillY} width="38" height="46" fill={C.coffee} opacity=".85"
-            clipPath="url(#mugClip)" style={{ transition: "y .3s ease" }} />
+            clipPath="url(#mugClip)"
+            style={{ transition: "y var(--t-page) var(--ease)" }} />
           <path d="M4 8 H26 V32 C26 37 22 41 17 41 H13 C8 41 4 37 4 32 Z"
             fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="1.6" strokeLinejoin="round" />
           <path d="M26 14 H29 C33 14 35 17 35 21 C35 25 33 28 29 28 H26"
@@ -318,37 +367,23 @@ function CoffeeCard({
           {day.overspill && <circle cx="15" cy="7" r="2" fill={C.coffee}
             style={{ animation: "drip .9s ease-in-out infinite" }} />}
         </svg>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 24, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.01em", ...num }}>
             {day.totalMg}
             <span style={{ fontSize: 13, fontWeight: 400, color: C.soft }}> mg</span>
           </div>
-          <div style={{ fontSize: 12, color: C.soft, marginTop: 4 }}>
+          <div style={{ fontSize: 11.5, color: C.soft, marginTop: 5 }}>
             {day.cups} {day.cups === 1 ? "cup" : "cups"} today
           </div>
         </div>
       </div>
 
       <div style={{ marginTop: "auto" }}>
-        <CoffeeRow label="In you now" value={`${day.nowMg} mg`} />
-        <CoffeeRow label="Next cup" value={day.nextBest} />
-        <CoffeeRow label="At bedtime" value={`${day.bedMg} mg`} color={bedColor} />
+        <CardRow label="In you now" value={`${day.nowMg} mg`} first />
+        <CardRow label="Next cup" value={day.nextBest} />
+        <CardRow label="At bedtime" value={`${day.bedMg} mg`} color={bedColor} />
       </div>
     </section>
-  );
-}
-
-function CoffeeRow({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{
-      display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8,
-      padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)", ...num,
-    }}>
-      <span style={{ fontSize: 12, color: C.soft }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 600, color: color ?? C.ink, whiteSpace: "nowrap" }}>
-        {value}
-      </span>
-    </div>
   );
 }
 
@@ -360,6 +395,8 @@ const TIME_HALF: React.CSSProperties = {
   border: "none", background: "transparent", outline: "none", padding: 0,
   width: "100%", minWidth: 0, textAlign: "center", fontSize: 14, color: C.ink, ...num,
 };
+
+const DID_ACCENT = "#8FB6E8";
 
 /**
  * What I did.
@@ -422,6 +459,7 @@ function DidCard() {
   ].sort((a, b) => a.sort.localeCompare(b.sort));
 
   const tracked = work.reduce((s, e) => s + ((e.payload as { mins: number }).mins || 0), 0);
+  const ready = text.trim().length > 0;
 
   // Both blank means now, which is what an untimed entry has always meant. One time on
   // its own is when it happened, not half a range — a lone end with an implied start of
@@ -476,7 +514,7 @@ function DidCard() {
         display: "flex", justifyContent: "space-between", alignItems: "center",
         gap: 8, flexWrap: "wrap", marginBottom: 12,
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: C.ink }}>What I did today</span>
+        <SectionTitle>What I did today</SectionTitle>
         <DayStrip date={date} onChange={setDate} compact />
       </div>
 
@@ -486,17 +524,16 @@ function DidCard() {
         clocks share one box rather than sitting in two mostly empty ones, and they need
         no caption — `--:--` says optional by itself.
       */}
-      <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "grid", gap: 8, marginBottom: 4 }}>
         <input value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void add()}
+          aria-label="What you did"
           placeholder="Went to visit grandmom" style={INPUT} />
 
-        <div style={{
-          display: "grid", gridTemplateColumns: "minmax(0,1fr) 104px", gap: 8,
-        }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 104px", gap: 8 }}>
           <div className="range-field" style={{
             ...INPUT, display: "flex", alignItems: "center", gap: 4,
-            height: 42, padding: "0 8px",
+            height: H.field, padding: "0 8px",
           }}>
             <input type="time" value={start} aria-label="Started at"
               onChange={(e) => setStart(e.target.value)}
@@ -508,10 +545,12 @@ function DidCard() {
               onKeyDown={(e) => e.key === "Enter" && void add()}
               style={TIME_HALF} />
           </div>
-          <button onClick={() => void add()} style={{
-            height: 42, borderRadius: 11, border: "none", background: "#8FB6E8",
-            color: "#0E1626", fontSize: 14, fontWeight: 600, lineHeight: 1,
-            cursor: "pointer", padding: 0,
+          <button onClick={() => void add()} disabled={!ready} style={{
+            height: H.field, borderRadius: 11, border: "none",
+            background: ready ? DID_ACCENT : "rgba(255,255,255,.08)",
+            color: ready ? onAccent(DID_ACCENT) : C.faint,
+            fontSize: 14, fontWeight: 600, lineHeight: 1,
+            cursor: ready ? "pointer" : "not-allowed", padding: 0,
           }}>
             Add
           </button>
@@ -532,20 +571,16 @@ function DidCard() {
         ),
       )}
 
-      {rows.length > 0 && (
+      {rows.length > 0 ? (
         <div style={{
           display: "flex", justifyContent: "space-between", gap: 10,
-          fontSize: 11.5, color: C.faint, paddingTop: 8, ...num,
+          fontSize: 11.5, color: C.faint, paddingTop: 10, ...num,
         }}>
           <span>{tracked > 0 ? `${shortDur(tracked)} of tracked sessions` : ""}</span>
           <span>Hold a row to edit it</span>
         </div>
-      )}
-
-      {rows.length === 0 && (
-        <div style={{ fontSize: 12, color: C.faint, paddingTop: 8 }}>
-          Nothing logged for this day.
-        </div>
+      ) : (
+        <Empty>Nothing logged for this day.</Empty>
       )}
     </section>
   );
@@ -581,11 +616,10 @@ function LogRow({
 
   return (
     <div {...hold.bind} title="Hold to edit" style={{
-      display: "flex", gap: 10, padding: "9px 0",
-      borderTop: "1px solid rgba(255,255,255,.08)", ...hold.style,
+      display: "flex", gap: 10, padding: "9px 0", borderTop: RULE, ...hold.style,
     }}>
       <span style={{
-        fontSize: 11.5, color: C.skill, flex: "none", width: 96, paddingTop: 1, ...num,
+        fontSize: 11.5, color: C.skill, flex: "none", width: 92, paddingTop: 2, ...num,
       }}>
         {row.at}
       </span>
@@ -605,13 +639,7 @@ function LogRow({
       {/* Every row, typed or tracked. A log you cannot delete a line from is a log you
           stop trusting, and a session logged by mistake was the one row you could not
           take back from here. */}
-      <button onClick={onRemove} aria-label={`Remove ${row.text}`}
-        style={{
-          border: "none", background: "transparent", color: C.faint, cursor: "pointer",
-          fontSize: 16, padding: "0 2px", lineHeight: 1, flex: "none",
-        }}>
-        ×
-      </button>
+      <RemoveButton onClick={onRemove} label={`Remove ${row.text}`} />
     </div>
   );
 }
@@ -635,10 +663,7 @@ function RowEditor({
   };
 
   return (
-    <div style={{
-      display: "grid", gap: 8, padding: "10px 0",
-      borderTop: "1px solid rgba(255,255,255,.08)",
-    }}>
+    <div style={{ display: "grid", gap: 8, padding: "10px 0", borderTop: RULE }}>
       <input
         value={d.text} autoFocus onChange={(e) => set({ text: e.target.value })}
         onKeyDown={keys} aria-label="What you did"
@@ -649,7 +674,7 @@ function RowEditor({
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 8 }}>
         <div className="range-field" style={{
-          ...INPUT, display: "flex", alignItems: "center", gap: 4, height: 42, padding: "0 8px",
+          ...INPUT, display: "flex", alignItems: "center", gap: 4, height: H.field, padding: "0 8px",
         }}>
           <input type="time" value={d.start} aria-label="Started at"
             onChange={(e) => set({ start: e.target.value })} onKeyDown={keys} style={TIME_HALF} />
@@ -658,23 +683,22 @@ function RowEditor({
             onChange={(e) => set({ end: e.target.value })} onKeyDown={keys} style={TIME_HALF} />
         </div>
         <button onClick={() => onSave(d)} style={{
-          height: 42, padding: "0 16px", borderRadius: 11, border: "none", background: "#8FB6E8",
-          color: "#0E1626", fontSize: 14, fontWeight: 600, lineHeight: 1, cursor: "pointer",
+          height: H.field, padding: "0 16px", borderRadius: 11, border: "none",
+          background: DID_ACCENT, color: onAccent(DID_ACCENT), fontSize: 14, fontWeight: 600,
+          lineHeight: 1, cursor: "pointer",
         }}>
           Save
         </button>
-        <button onClick={onCancel} aria-label="Cancel" style={{
-          width: 42, height: 42, borderRadius: 11, border: "1px solid rgba(255,255,255,.14)",
-          background: "rgba(255,255,255,.05)", color: C.soft, fontSize: 15, cursor: "pointer",
-          padding: 0,
+        <button onClick={onCancel} aria-label="Cancel editing" style={{
+          ...ghost(H.field, 11, C.soft),
         }}>
-          ×
+          <Icon name="close" size={16} strokeWidth={1.9} />
         </button>
       </div>
 
       <button onClick={onDelete} style={{
         justifySelf: "start", border: "none", background: "transparent", color: C.red,
-        fontSize: 12, cursor: "pointer", padding: "2px 0",
+        fontSize: 12, cursor: "pointer", padding: "2px 0", minHeight: 30,
       }}>
         Delete
       </button>
@@ -713,8 +737,14 @@ function NoteCard() {
 
   return (
     <section style={CARD}>
-      <div style={{ marginBottom: 12 }}>
-        <DayStrip date={date} onChange={(d) => { setText(null); setDate(d); }} />
+      {/* The prototype's note card carries no heading, which reads as an orphaned date
+          picker sitting under the card above it. One word fixes that. */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        gap: 8, flexWrap: "wrap", marginBottom: 12,
+      }}>
+        <SectionTitle>Note</SectionTitle>
+        <DayStrip date={date} onChange={(d) => { setText(null); setDate(d); }} compact />
       </div>
 
       {/*
@@ -741,6 +771,7 @@ function NoteCard() {
           value={value}
           onChange={(e) => setText(e.target.value)}
           onBlur={() => void commit()}
+          aria-label="Note for the day"
           placeholder="How the day went, what got in the way, what to remember."
           rows={4}
           style={{
@@ -760,7 +791,7 @@ function NoteCard() {
       </div>
       {saved.trim() && (
         <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8, ...num }}>
-          {saved.trim().split(/\s+/).length} words
+          {saved.trim().split(/\s+/).length} words · saved when you tap away
         </div>
       )}
     </section>

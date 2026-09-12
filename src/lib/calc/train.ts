@@ -221,12 +221,24 @@ export function sessionClock(events: AnyEvent[], date: string, nowClock?: string
   // final rest, which on a heavy day is several minutes of the session.
   const stamped = (endEvent?.payload as { end?: string } | undefined)?.end;
 
-  // Still going: today, sets logged, nothing has closed the day.
-  if (date === today() && !ended && nowClock) {
+  /*
+    Still going: today, sets logged, nothing has closed the day — and the clock has
+    actually passed the first set.
+
+    That last condition is not pedantry. `dur` wraps past midnight, which is correct for
+    a set at 23:50 and one at 00:20, but it also means a first set stamped LATER than the
+    current time reads as almost a full day: sets backdated into this evening, or a phone
+    whose clock moved, showed "21h 15m · running" on a session that had not started. When
+    now is before the start there is no elapsed time to report, so it falls through to
+    the set-derived span, which is the honest answer.
+  */
+  const running = date === today() && !ended && nowClock != null
+    && toMin(nowClock) >= toMin(start);
+  if (running) {
     return {
       source: "running",
       start, end: null,
-      mins: Math.max(1, dur(start, nowClock)),
+      mins: Math.max(1, dur(start, nowClock!)),
       kcal: null,
       label: "running",
     };

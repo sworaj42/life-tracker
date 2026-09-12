@@ -7,7 +7,26 @@
   font-display: swap;
 }
 
+/*
+  One motion scale for the whole app, so nothing is timed by eye.
+
+  `--t-tap` is the press, short enough to feel like the surface moved under the finger
+  rather than animated afterwards. `--t-ui` is a state change you are watching — a bar
+  filling, a chip selecting. `--t-page` is a whole screen arriving. The easing is the
+  standard "decelerate" curve: quick to leave, slow to land, which is what reads as
+  weight rather than as a slide.
+*/
+:root {
+  --t-tap: 90ms;
+  --t-ui: 180ms;
+  --t-page: 260ms;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
@@ -17,6 +36,7 @@ body {
   /* iOS: no rubber-band overscroll behind the fixed tab bar. */
   overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a { color: #8FB6E8; }
@@ -25,6 +45,33 @@ a:hover { color: #fff; }
 input, button, select, textarea { font-family: inherit; }
 input::placeholder, textarea::placeholder { color: #6D778C; }
 input { color-scheme: dark; }
+
+/*
+  Every interactive surface answers a touch.
+
+  The iOS tap highlight is a grey box that ignores the border radius, so it is removed
+  and replaced with a press of our own; `touch-action: manipulation` drops the 300ms
+  double-tap-to-zoom delay, which is most of what makes a web app feel slower than a
+  native one. The scale is 2% — enough to register under a thumb, small enough that a
+  full-width card header does not visibly jump.
+*/
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background-color var(--t-ui) ease,
+    border-color var(--t-ui) ease,
+    color var(--t-ui) ease,
+    opacity var(--t-ui) ease,
+    transform var(--t-tap) ease;
+}
+button:not(:disabled):active { transform: scale(0.98); }
+button:disabled { cursor: not-allowed; }
+
+input, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--t-ui) ease, background-color var(--t-ui) ease;
+}
 
 input:focus, button:focus-visible, select:focus, textarea:focus {
   outline: 2px solid #8FB6E8;
@@ -43,6 +90,29 @@ button:focus:not(:focus-visible) { outline: none; }
 .range-field input:focus { outline: none; }
 .range-field:focus-within { outline: 2px solid #8FB6E8; outline-offset: 2px; }
 
+/*
+  A date field with our own icon.
+
+  Desktop Chrome draws its own calendar button inside `input[type=date]` regardless of
+  `appearance: none`, so the field showed TWO calendars side by side. Rather than hide
+  the native one and lose the click target, it is stretched transparently over the whole
+  field: the drawn icon is what you see, and a tap anywhere opens the real picker —
+  which is also how the field already behaved on iOS, where nothing is drawn at all.
+*/
+.date-field { position: relative; }
+.date-field input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+/* Safari centres the value and leaves the empty field blank; keep it left and visible. */
+.date-field input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+
 @keyframes drip {
   0%   { transform: translateY(0); opacity: 0; }
   15%  { opacity: 1; }
@@ -57,8 +127,55 @@ button:focus:not(:focus-visible) { outline: none; }
   to   { opacity: 1; transform: none; }
 }
 
+/* A screen arriving. Shorter travel than `rise` because the whole page moves. */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The quick-log sheet, and the scrim behind it. */
+@keyframes sheetIn {
+  from { transform: translateY(100%); }
+  to   { transform: none; }
+}
+@keyframes scrimIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* A running workout clock. Slow enough to read as alive, not as an alarm. */
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: .35; }
+}
+
+.page-in { animation: pageIn var(--t-page) var(--ease-out) both; }
+
+.sheet-in { animation: sheetIn var(--t-page) var(--ease) both; }
+.scrim-in { animation: scrimIn var(--t-ui) ease both; }
+
+/*
+  Two half-width cards side by side need about 150px each: a title, a chevron and two
+  36px buttons. Below a 360px viewport they get 139 and the coffee card's `+` hangs three
+  pixels off the screen, which is enough to give the whole document a horizontal scroll.
+  On the smallest phones they stack.
+*/
+@media (max-width: 359px) {
+  .half-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/*
+  Motion is decoration everywhere in this app — nothing is only legible because it moved.
+  So when the system asks for less of it, there is none: transitions collapse to
+  instant rather than being merely shortened, and the two infinite loops (the drip and
+  the live pulse) stop entirely rather than running forever at 1ms.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+  button:not(:disabled):active { transform: none; }
 }

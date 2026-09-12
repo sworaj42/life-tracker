@@ -17,8 +17,10 @@ import { DEFAULT_PROFILE, type AnyEvent, type Profile } from "@/db/types";
 import { today, shiftDays, toMin, nowMin } from "@/lib/date";
 import { coffeeDay } from "@/lib/calc/coffee";
 import { C, num } from "@/ui/tokens";
-import { CARD, INPUT, DayStrip } from "@/ui/kit";
-import { BarChart, HourlyBars, Segmented, Stat, PageHead, caption } from "@/ui/charts";
+import {
+  CARD, TILE, INPUT, DayStrip, PageHead, Segmented, Stat, SectionTitle, FieldLabel, caption,
+} from "@/ui/kit";
+import { BarChart, HourlyBars } from "@/ui/charts";
 
 const ACCENT = "#C08A5E";
 
@@ -71,8 +73,8 @@ export function CoffeePage({ onBack }: { onBack: () => void }) {
       />
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Today</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <SectionTitle style={{ marginBottom: 12 }}>Today</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
           <Stat label="In you now" value={t.nowMg} unit=" mg" />
           <Stat label="At bedtime" value={t.bedMg} unit=" mg"
             color={t.bedMg > profile.sleep_mg_threshold ? C.red : C.green}
@@ -83,14 +85,11 @@ export function CoffeePage({ onBack }: { onBack: () => void }) {
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginBottom: 10 }}>
         <Stat label="Cups a day" value={avgCups.toFixed(1)}
           sub={`${Math.round(avgMg)} mg average`} />
-        <div style={{
-          background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.07)",
-          borderRadius: 12, padding: "10px 12px",
-        }}>
-          <div style={{ fontSize: 12, color: C.soft, marginBottom: 4 }}>Per cup</div>
+        <div style={TILE}>
+          <FieldLabel style={{ marginBottom: 4 }}>Per cup</FieldLabel>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input inputMode="numeric" type="number"
               value={cupDraft ?? String(profile.cup_mg)}
@@ -105,7 +104,7 @@ export function CoffeePage({ onBack }: { onBack: () => void }) {
       </div>
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Cups, each day</div>
+        <SectionTitle style={{ marginBottom: 12 }}>Cups, each day</SectionTitle>
         <BarChart points={series} color={ACCENT} average={avgCups}
           format={(v) => v.toFixed(0)} />
         <div style={caption}>Last {days} days. Dashed line is the average.</div>
@@ -116,7 +115,7 @@ export function CoffeePage({ onBack }: { onBack: () => void }) {
           display: "flex", justifyContent: "space-between", alignItems: "center",
           gap: 8, flexWrap: "wrap", marginBottom: 12,
         }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>When you drink it</span>
+          <SectionTitle>When you drink it</SectionTitle>
           <DayStrip date={day} onChange={setDay} compact />
         </div>
         <HourlyBars counts={hours} color={ACCENT} markerHour={lastCall} />
@@ -127,7 +126,7 @@ export function CoffeePage({ onBack }: { onBack: () => void }) {
       </section>
 
       <section style={CARD}>
-        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>How this is worked out</div>
+        <SectionTitle style={{ marginBottom: 8 }}>How this is worked out</SectionTitle>
         <div style={{ fontSize: 12.5, color: C.soft, lineHeight: 1.7 }}>
           Caffeine halves every {profile.caffeine_half_life_h} hours, so a cup at noon is
           a quarter of itself by ten at night. Doses add up: the projection is the sum of

@@ -26,7 +26,7 @@ import {
   MEALS, foodFrequency, rankFoods, foodPayload, unitsToGrams, gramsToUnits, roundQty,
 } from "@/lib/calc/calories";
 import { C, num } from "@/ui/tokens";
-import { INPUT, Stepper } from "@/ui/kit";
+import { INPUT, RULE, Stepper, chip, cta } from "@/ui/kit";
 
 const ACCENT = C.food;
 const ON_ACCENT = "#1F1708";
@@ -91,12 +91,8 @@ export function FoodPicker({
       {onMeal && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
           {MEALS.map((m) => (
-            <button key={m.key} onClick={() => onMeal(m.key)} style={{
-              border: "1px solid rgba(255,255,255,.12)", borderRadius: 10,
-              background: meal === m.key ? ACCENT : "rgba(255,255,255,.05)",
-              color: meal === m.key ? ON_ACCENT : C.soft,
-              fontSize: 12, padding: "7px 10px", cursor: "pointer", minHeight: 34,
-            }}>
+            <button key={m.key} onClick={() => onMeal(m.key)} aria-pressed={meal === m.key}
+              style={{ ...chip(meal === m.key, ACCENT), fontSize: 12 }}>
               {m.label}
             </button>
           ))}
@@ -121,61 +117,82 @@ export function FoodPicker({
           const qty = qtyOf(f);
           const use = freq.get(f.id) ?? freq.get(f.name.trim().toLowerCase());
           const grams = unitsToGrams(qty, f.grams_per_unit);
+          const byGrams = f.grams_per_unit != null && f.grams_per_unit > 0;
           return (
-            <div key={f.id} style={{
-              padding: "9px 0", borderTop: "1px solid rgba(255,255,255,.08)",
-            }}>
+            <div key={f.id} style={{ padding: "9px 0", borderTop: RULE }}>
+              <div style={{
+                display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7,
+              }}>
+                <span style={{
+                  fontSize: 13.5, color: C.ink, flex: 1, minWidth: 0, overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {f.name}
+                </span>
+                <span style={{ fontSize: 11.5, color: C.faint, flex: "none", ...num }}>
+                  {Math.round(f.kcal * qty)} kcal
+                  {use?.atMeal ? ` · ${use.atMeal}× here` : ""}
+                </span>
+              </div>
+
+              {/*
+                One row of controls, not two.
+
+                The grams field used to sit on a line of its own below the stepper, so
+                every food in the list was three lines tall and eight of them filled two
+                screens. Quantity, weight and Add belong together — they are one decision
+                — and putting them on one line halves the height of the list.
+
+                Grams only exists for a food that has been given a weight. It writes back
+                through the unit quantity, so there is one number, not two.
+              */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 13.5, color: C.ink, overflow: "hidden",
-                    textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {f.name}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, ...num }}>
-                    {Math.round(f.kcal * qty)} kcal · {roundQty(qty)} {f.unit}
-                    {grams != null && ` · ${grams} g`}
-                    {use?.atMeal ? ` · ${use.atMeal}× here` : ""}
-                  </div>
-                </div>
                 <Stepper value={roundQty(qty)} onChange={(v) => setQty(f, Math.max(0.05, v))}
                   accent={ACCENT} label={f.name} />
-                <button onClick={() => void add(f)} style={{
-                  height: 30, padding: "0 12px", borderRadius: 9, border: "none",
+                <span style={{
+                  fontSize: 11.5, color: C.faint, flex: "none", width: 52,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {f.unit}
+                </span>
+
+                {byGrams ? (
+                  <span style={{
+                    display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0,
+                  }}>
+                    <input inputMode="decimal" aria-label={`Grams of ${f.name}`}
+                      value={gramDrafts[f.id] ?? (grams == null ? "" : String(grams))}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setGramDrafts((d) => ({ ...d, [f.id]: raw }));
+                        const g = parseFloat(raw);
+                        if (!Number.isFinite(g) || g <= 0) return;
+                        const u = gramsToUnits(g, f.grams_per_unit);
+                        if (u != null) setQty(f, u);
+                      }}
+                      onBlur={() => setGramDrafts((d) => {
+                        const next = { ...d };
+                        delete next[f.id];
+                        return next;
+                      })}
+                      style={{
+                        ...INPUT, width: 62, minWidth: 0, minHeight: 30,
+                        padding: "5px 7px", fontSize: 12.5, textAlign: "right", ...num,
+                      }} />
+                    <span style={{ fontSize: 11.5, color: C.faint, flex: "none" }}>g</span>
+                  </span>
+                ) : (
+                  <span style={{ flex: 1 }} />
+                )}
+
+                <button onClick={() => void add(f)} aria-label={`Add ${f.name}`} style={{
+                  height: 30, padding: "0 14px", borderRadius: 9, border: "none",
                   background: ACCENT, color: ON_ACCENT, fontSize: 12.5, fontWeight: 600,
                   cursor: "pointer", flex: "none",
                 }}>
                   Add
                 </button>
               </div>
-
-              {/* Grams only exists for a food that has been given a weight. It writes
-                  back through the unit quantity, so there is one number, not two. */}
-              {f.grams_per_unit != null && f.grams_per_unit > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
-                  <span style={{ fontSize: 11.5, color: C.faint }}>or</span>
-                  <input inputMode="decimal" aria-label={`Grams of ${f.name}`}
-                    value={gramDrafts[f.id] ?? (grams == null ? "" : String(grams))}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setGramDrafts((d) => ({ ...d, [f.id]: raw }));
-                      const g = parseFloat(raw);
-                      if (!Number.isFinite(g) || g <= 0) return;
-                      const u = gramsToUnits(g, f.grams_per_unit);
-                      if (u != null) setQty(f, u);
-                    }}
-                    onBlur={() => setGramDrafts((d) => {
-                      const next = { ...d };
-                      delete next[f.id];
-                      return next;
-                    })}
-                    style={{ ...INPUT, width: 84, padding: "6px 8px", fontSize: 13, ...num }} />
-                  <span style={{ fontSize: 11.5, color: C.faint, ...num }}>
-                    g · 1 {f.unit} = {f.grams_per_unit} g
-                  </span>
-                </div>
-              )}
             </div>
           );
         })
@@ -241,7 +258,7 @@ function NewFood({
 
   return (
     <div style={{ paddingTop: 10 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)", gap: 8, marginBottom: 8 }}>
         <input placeholder="Name" value={f.name} autoFocus
           onChange={(e) => setF({ ...f, name: e.target.value })} style={INPUT} />
         <input placeholder="plate" value={f.unit} aria-label="Unit"
@@ -264,9 +281,9 @@ function NewFood({
         Give it a weight and you can log this food by grams as well as by {f.unit || "serving"}.
       </div>
       <button onClick={() => void save()} disabled={!ready} style={{
-        width: "100%", height: 42, borderRadius: 12, border: "none",
-        background: ready ? ACCENT : "rgba(226,180,97,.3)", color: ON_ACCENT,
-        fontSize: 14, fontWeight: 600, cursor: ready ? "pointer" : "not-allowed",
+        ...cta(ACCENT, ON_ACCENT),
+        background: ready ? ACCENT : "rgba(255,255,255,.08)",
+        color: ready ? ON_ACCENT : C.faint,
       }}>
         {ready ? `Save and log 1 ${f.unit || "serving"}` : "Name and calories needed"}
       </button>

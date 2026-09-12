@@ -51,6 +51,33 @@ React · TypeScript · Vite · IndexedDB (`idb`) · Supabase · vite-plugin-pwa.
 No chart library — the charts are hand-rolled inline SVG. No router — navigation is
 state, since an installed PWA has no browser back button.
 
+## The UI layer
+
+Four files, and nothing else defines a shape:
+
+| File | What lives there |
+|---|---|
+| `ui/tokens.ts` | Values only — colours, control heights, the tab table, the intensity ramp. |
+| `ui/kit.tsx` | Every surface and control: cards, inputs, chips, meters, the day strip, the page header. If a shape appears on two screens it belongs here. |
+| `ui/icons.tsx` | One 24-grid stroke family. No text glyphs used as icons. |
+| `ui/charts.tsx` | The four inline-SVG charts, and nothing that is not a chart. |
+
+`ui/chrome.tsx` settles who owns the top of the screen: a detail page renders `PageHead`,
+which tells the shell to stand down so the page is full-screen over its tab.
+
+Motion is one scale, declared as custom properties in `index.css` (`--t-tap`, `--t-ui`,
+`--t-page`) and switched off entirely under `prefers-reduced-motion`.
+
+## Looking at a screen with data in it
+
+```bash
+npm run dev
+open "http://localhost:5173/?seed"   # wipes the local database, writes 35 days of history
+```
+
+Dev only, and never automatic. `import.meta.env.DEV` is a compile-time constant, so
+`src/dev/seed.ts` and the branch that calls it are dropped from the production bundle.
+
 ## Running it
 
 ```bash

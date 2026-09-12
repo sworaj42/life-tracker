@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { C, input as inputStyle, cta } from "@/ui/tokens";
+import { C } from "@/ui/tokens";
+import { INPUT, cta } from "@/ui/kit";
 
 /**
  * One account, signed in once. The session is persisted in localStorage and refreshed
@@ -36,12 +37,12 @@ export function Login() {
         </div>
         <input
           type="email" placeholder="Email" value={email} autoComplete="username"
-          onChange={(e) => setEmail(e.target.value)} style={inputStyle} required
+          onChange={(e) => setEmail(e.target.value)} style={INPUT} required
         />
         <input
           type="password" placeholder="Password" value={password} autoComplete="current-password"
           onChange={(e) => setPassword(e.target.value)}
-          style={{ ...inputStyle, marginTop: 8 }} required
+          style={{ ...INPUT, marginTop: 8 }} required
         />
         {error && (
           <div style={{ color: C.red, fontSize: 12.5, marginTop: 10 }}>{error}</div>

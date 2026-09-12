@@ -10,18 +10,27 @@
  *     placeholder — so you can always see what the app would have chosen.
  *   - Anything overridable needs a way back to automatic. The prototype had one for
  *     macros and not for maintenance; here every override has one.
+ *
+ * The automatic figures shown here come from `lib/calc/calories`, the same functions the
+ * Fuel tab renders. They used to be recomputed inline with the activity factor hard-wired
+ * to 1.55, so on any week with five training days this screen and the Calories page
+ * disagreed about maintenance by two hundred calories — and neither said which was right.
  */
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { getProfile, saveProfile, allEventsRaw, outboxCount } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type Profile } from "@/db/types";
-import { supabase } from "@/lib/supabase";
+import { supabase, hasSupabase } from "@/lib/supabase";
 import { subscribe, drain, type SyncState } from "@/sync";
 import { buildExport, exportFilename, downloadJson } from "@/lib/export";
 import { weightStats } from "@/lib/calc/weight";
-import { C, num, input as inputStyle, cta } from "@/ui/tokens";
-import { Card, CardHeader, Eyebrow } from "@/ui/components";
+import { maintenance, targets } from "@/lib/calc/calories";
+import { today } from "@/lib/date";
+import { C, H, num } from "@/ui/tokens";
+import {
+  CARD, INPUT, Eyebrow, PageHead, SectionTitle, cta, ghostBtn, chip, caption, RULE,
+} from "@/ui/kit";
 import { DateField } from "@/ui/kit";
 
 const ACCENT = "#B6A6E8";
@@ -36,46 +45,22 @@ export function Settings({ onClose }: { onClose: () => void }) {
     bump();
   };
 
-  // Automatic values, shown as placeholders so an override never hides what it replaced.
-  const stats = weightStats(events);
+  // The same arithmetic the Fuel tab renders, not a second copy of it.
+  const live = events.filter((e) => !e.deleted_at);
+  const stats = weightStats(live);
   const kg = stats.avg7 ?? stats.latest ?? profile.weight_start;
-  const bmr = Math.round(
-    10 * kg + 6.25 * profile.height_cm - 5 * profile.age + (profile.sex === "male" ? 5 : -161),
-  );
-  const ACT = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725 };
-  const factor = profile.activity === "auto" ? 1.55 : ACT[profile.activity];
-  const autoMaint = Math.round(bmr * factor);
-  const maint = profile.maint_override ?? autoMaint;
-  const target = Math.max(1200, maint - profile.deficit);
-  const autoProtein = Math.round(kg * profile.protein_g_per_kg);
-  const autoFat = Math.round((target * profile.fat_pct_of_intake) / 9);
-  const autoCarbs = Math.round(
-    (target - (profile.goal_protein_g ?? autoProtein) * 4 - (profile.goal_fat_g ?? autoFat) * 9) / 4,
-  );
+  const maint = maintenance(profile, kg, live);
+  const goal = targets(profile, maint.value, kg);
 
   return (
-    <div style={{ animation: "rise .2s ease both" }}>
-      <button
-        onClick={onClose}
-        style={{
-          display: "flex", alignItems: "center", gap: 4, background: "none",
-          border: "none", color: ACCENT, fontSize: 14, cursor: "pointer",
-          padding: 0, minHeight: 44,
-        }}
-      >
-        <span style={{ fontSize: 20, lineHeight: 1 }}>‹</span> Back
-      </button>
-      <h1 style={{
-        fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 4px",
-      }}>
-        Settings
-      </h1>
-      <p style={{ fontSize: 12, color: C.faint, margin: "0 0 16px", lineHeight: 1.5 }}>
-        Everything else in the app reads from here.
-      </p>
+    <div>
+      <PageHead
+        title="Settings" back={onClose} backLabel="Back" accent={ACCENT}
+        sub="Everything else in the app reads from here."
+      />
 
       <Eyebrow>You</Eyebrow>
-      <Card>
+      <section style={CARD}>
         <Row label="Height" hint="Used for BMI and maintenance calories">
           <Num value={profile.height_cm} suffix="cm" step={0.5}
             onSave={(v) => set({ height_cm: v })} />
@@ -90,10 +75,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <Row label="Bedtime" hint="Caffeine at bedtime is measured against this" last>
           <Time value={profile.bedtime} onSave={(v) => set({ bedtime: v })} />
         </Row>
-      </Card>
+      </section>
 
       <Eyebrow>Weight goal</Eyebrow>
-      <Card>
+      <section style={CARD}>
         <Row label="Starting weight" hint="Where the progress bar begins">
           <Num value={profile.weight_start} suffix="kg" step={0.1}
             onSave={(v) => set({ weight_start: v })} />
@@ -102,51 +87,59 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Num value={profile.weight_target} suffix="kg" step={0.1}
             onSave={(v) => set({ weight_target: v })} />
         </Row>
-        <Row label="Target date" last>
+        <Row label="Target date" hint="Optional — it only labels the goal, nothing reads it" last>
           <DateField
-            value={profile.target_date ?? ""} ariaLabel="Target date"
+            value={profile.target_date ?? ""} ariaLabel="Target date" min={today()}
             onChange={(v) => void set({ target_date: v || null })}
-            style={{ width: 168 }}
+            style={{ width: 172 }}
           />
         </Row>
-      </Card>
+      </section>
 
       <Eyebrow>Calories</Eyebrow>
-      <Card>
-        <Row label="Activity" hint="Auto derives it from logged training days">
+      <section style={CARD}>
+        {/* Five options do not fit beside a label on a phone, so this row stacks. */}
+        <Row label="Activity"
+          hint={maint.derived
+            ? `Auto: ${maint.trainDays} training day${maint.trainDays === 1 ? "" : "s"} in the last 7 → ${maint.activity} (×${maint.factor})`
+            : `Auto falls back to moderate until something is logged (×${maint.factor})`}
+          stack>
           <Choice value={profile.activity}
             options={["auto", "sedentary", "light", "moderate", "active"]}
             onPick={(v) => set({ activity: v as Profile["activity"] })} />
         </Row>
         <Row label="Maintenance"
-          hint={`Formula gives ${autoMaint} kcal (BMR ${bmr} × ${factor})`}>
-          <Override value={profile.maint_override} auto={autoMaint} suffix="kcal"
+          hint={`Formula gives ${maint.auto.toLocaleString()} kcal — BMR ${maint.bmr.toLocaleString()} × ${maint.factor}`}>
+          <Override value={profile.maint_override} auto={maint.auto} suffix="kcal"
             onSave={(v) => set({ maint_override: v })} />
         </Row>
-        <Row label="Daily deficit" hint={`Eat this much a day: ${target} kcal`}>
+        <Row label="Daily deficit" hint={`Eat this much a day: ${goal.kcal.toLocaleString()} kcal`}>
           <Num value={profile.deficit} suffix="kcal" step={50}
             onSave={(v) => set({ deficit: Math.round(v) })} />
         </Row>
         <Row label="Calorie goal">
-          <Override value={profile.goal_kcal} auto={target} suffix="kcal"
+          <Override value={profile.goal_kcal} auto={goal.auto.kcal} suffix="kcal"
             onSave={(v) => set({ goal_kcal: v })} />
         </Row>
         <Row label="Protein" hint={`${profile.protein_g_per_kg} g per kg of bodyweight`}>
-          <Override value={profile.goal_protein_g} auto={autoProtein} suffix="g"
+          <Override value={profile.goal_protein_g} auto={goal.auto.protein} suffix="g"
             onSave={(v) => set({ goal_protein_g: v })} />
         </Row>
         <Row label="Carbs" hint="Fills whatever protein and fat leave">
-          <Override value={profile.goal_carbs_g} auto={autoCarbs} suffix="g"
+          <Override value={profile.goal_carbs_g} auto={goal.auto.carbs} suffix="g"
             onSave={(v) => set({ goal_carbs_g: v })} />
         </Row>
         <Row label="Fat" hint={`${Math.round(profile.fat_pct_of_intake * 100)}% of intake`} last>
-          <Override value={profile.goal_fat_g} auto={autoFat} suffix="g"
+          <Override value={profile.goal_fat_g} auto={goal.auto.fat} suffix="g"
             onSave={(v) => set({ goal_fat_g: v })} />
         </Row>
-      </Card>
+        <div style={{ ...caption, borderTop: RULE, paddingTop: 10, marginTop: 10 }}>
+          {goal.note} These are the same four figures the Food page edits.
+        </div>
+      </section>
 
       <Eyebrow>Water</Eyebrow>
-      <Card>
+      <section style={CARD}>
         <Row label="Glass size">
           <Num value={profile.glass_ml} suffix="ml" step={10}
             onSave={(v) => set({ glass_ml: Math.round(v) })} />
@@ -163,10 +156,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Num value={profile.water_training_ml} suffix="ml" step={50}
             onSave={(v) => set({ water_training_ml: Math.round(v) })} />
         </Row>
-      </Card>
+      </section>
 
       <Eyebrow>Coffee</Eyebrow>
-      <Card>
+      <section style={CARD}>
         <Row label="Per cup" hint="Flat, both instant and brewed — deliberately">
           <Num value={profile.cup_mg} suffix="mg" step={5}
             onSave={(v) => set({ cup_mg: Math.round(v) })} />
@@ -179,10 +172,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Num value={profile.sleep_mg_threshold} suffix="mg" step={5}
             onSave={(v) => set({ sleep_mg_threshold: Math.round(v) })} />
         </Row>
-      </Card>
+      </section>
 
       <Eyebrow>Money</Eyebrow>
-      <Card>
+      <section style={CARD}>
         <Row label="Weekly budget" hint="Sunday to Saturday — the only calendar week">
           <Num value={profile.weekly_budget} suffix="Rs" step={500}
             onSave={(v) => set({ weekly_budget: Math.round(v) })} />
@@ -191,26 +184,30 @@ export function Settings({ onClose }: { onClose: () => void }) {
           <Num value={profile.balance_opening} suffix="Rs" step={100}
             onSave={(v) => set({ balance_opening: Math.round(v) })} />
         </Row>
-      </Card>
+      </section>
 
       <Eyebrow>Your data</Eyebrow>
       <DataCard events={events.length} pending={pending} />
 
-      <Eyebrow>Account</Eyebrow>
-      <Card>
-        <div style={{ fontSize: 12.5, color: C.soft, marginBottom: 10 }}>
-          Signing out clears the session on this device. Nothing logged is deleted —
-          it stays in the local database and in Postgres.
-        </div>
-        <button
-          onClick={() => void supabase.auth.signOut()}
-          style={{ ...cta("rgba(255,255,255,.08)", C.red), fontWeight: 500 }}
-        >
-          Sign out
-        </button>
-      </Card>
+      {hasSupabase && (
+        <>
+          <Eyebrow>Account</Eyebrow>
+          <section style={CARD}>
+            <div style={{ fontSize: 12.5, color: C.soft, marginBottom: 12, lineHeight: 1.6 }}>
+              Signing out clears the session on this device. Nothing logged is deleted —
+              it stays in the local database and in Postgres.
+            </div>
+            <button
+              onClick={() => void supabase.auth.signOut()}
+              style={{ ...cta("rgba(255,255,255,.08)", C.red), fontWeight: 500 }}
+            >
+              Sign out
+            </button>
+          </section>
+        </>
+      )}
 
-      <div style={{ height: 20 }} />
+      <div style={{ height: 8 }} />
     </div>
   );
 }
@@ -239,21 +236,26 @@ function DataCard({ events, pending }: { events: number; pending: number }) {
     setState(downloadJson(json, exportFilename()) ? "saved" : "idle");
   };
 
+  // A finished export says so for a moment, then goes back to offering itself.
+  useEffect(() => {
+    if (state !== "copied" && state !== "saved") return;
+    const id = setTimeout(() => setState("idle"), 2500);
+    return () => clearTimeout(id);
+  }, [state]);
+
   return (
-    <Card>
-      <CardHeader title="Export everything" accent={ACCENT} />
-      <div style={{ fontSize: 12.5, color: C.soft, margin: "8px 0 4px", lineHeight: 1.5 }}>
+    <section style={CARD}>
+      <SectionTitle style={{ color: ACCENT }}>Export everything</SectionTitle>
+      <div style={{ fontSize: 12.5, color: C.soft, margin: "8px 0 4px", lineHeight: 1.55 }}>
         Every event as JSON, tombstones included. This is your escape hatch, and right
         now it is also your only backup — the Supabase free tier has no automatic
         backups at all.
       </div>
       <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 12, ...num }}>
-        {events} events stored{pending > 0 && ` · ${pending} waiting to sync`}
+        {events.toLocaleString()} events stored
       </div>
 
-      <div style={{
-        borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: 10, marginBottom: 12,
-      }}>
+      <div style={{ borderTop: RULE, paddingTop: 10, marginBottom: 12 }}>
         <Line label="Connection" value={sync?.online === false ? "offline" : "online"}
           color={sync?.online === false ? C.food : C.green} />
         <Line label="Waiting to sync" value={String(pending)}
@@ -265,21 +267,17 @@ function DataCard({ events, pending }: { events: number; pending: number }) {
             : "not yet"} />
         {sync?.lastError && (
           <div style={{
-            fontSize: 11, color: C.red, marginTop: 8, lineHeight: 1.5,
-            wordBreak: "break-word",
+            fontSize: 11, color: C.red, marginTop: 8, lineHeight: 1.5, wordBreak: "break-word",
           }}>
             Last error: {sync.lastError}
           </div>
         )}
-        <button onClick={() => void drain()} style={{
-          border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-          borderRadius: 10, padding: "7px 12px", fontSize: 12, color: C.soft,
-          cursor: "pointer", marginTop: 10,
-        }}>
+        <button onClick={() => void drain()} style={{ ...ghostBtn, marginTop: 10, height: 34 }}>
           Sync now
         </button>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
         <button style={cta(ACCENT)} onClick={() => void doExport(false)}>
           {state === "saved" ? "Saved" : state === "working" ? "Building…" : "Download"}
         </button>
@@ -290,10 +288,10 @@ function DataCard({ events, pending }: { events: number; pending: number }) {
           {state === "copied" ? "Copied" : "Copy"}
         </button>
       </div>
-      <div style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 1.5 }}>
+      <div style={caption}>
         Installed on iOS, a download may be blocked — Copy always works.
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -313,26 +311,36 @@ function Line({ label, value, color }: { label: string; value: string; color?: s
 // ---------------------------------------------------------------------------
 
 const fieldStyle: CSSProperties = {
-  ...inputStyle,
+  ...INPUT,
   width: 96,
-  padding: "7px 8px",
+  minHeight: 36,
+  padding: "7px 10px",
   fontSize: 13,
   textAlign: "right",
-  fontVariantNumeric: "tabular-nums",
+  ...num,
 };
 
+/**
+ * A settings row.
+ *
+ * `stack` drops the control onto its own line. A five-option segmented control beside a
+ * label squeezed the label to about forty pixels, and "Auto derives it from logged
+ * training days" came out as five words stacked one per line.
+ */
 function Row({
-  label, hint, children, last,
-}: { label: string; hint?: string; children: ReactNode; last?: boolean }) {
+  label, hint, children, last, stack,
+}: { label: string; hint?: string; children: ReactNode; last?: boolean; stack?: boolean }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 12, padding: "9px 0",
-      borderBottom: last ? "none" : "1px solid rgba(255,255,255,.06)",
+      display: "flex", flexDirection: stack ? "column" : "row",
+      alignItems: stack ? "stretch" : "center",
+      gap: stack ? 10 : 12, padding: "10px 0",
+      borderBottom: last ? "none" : RULE,
     }}>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 13, color: C.ink }}>{label}</div>
+        <div style={{ fontSize: 13.5, color: C.ink }}>{label}</div>
         {hint && (
-          <div style={{ fontSize: 11, color: C.faint, marginTop: 2, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: C.faint, marginTop: 3, lineHeight: 1.45 }}>
             {hint}
           </div>
         )}
@@ -354,16 +362,18 @@ function Num({
     setDraft(null);
   };
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
       <input
-        type="number" inputMode="decimal" step={step}
+        type="number" inputMode="decimal" step={step} aria-label={suffix ? undefined : "Value"}
         value={draft ?? String(value)}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         style={fieldStyle}
       />
-      {suffix && <span style={{ fontSize: 11.5, color: C.faint, width: 26 }}>{suffix}</span>}
+      {suffix && (
+        <span style={{ fontSize: 11.5, color: C.faint, width: 26, flex: "none" }}>{suffix}</span>
+      )}
     </span>
   );
 }
@@ -371,9 +381,9 @@ function Num({
 function Time({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   return (
     <input
-      type="time" value={value.slice(0, 5)}
+      type="time" value={value.slice(0, 5)} aria-label="Bedtime"
       onChange={(e) => e.target.value && onSave(e.target.value)}
-      style={{ ...fieldStyle, width: 110, textAlign: "center" }}
+      style={{ ...fieldStyle, width: 116, textAlign: "center", colorScheme: "dark" }}
     />
   );
 }
@@ -382,16 +392,13 @@ function Choice({
   value, options, onPick,
 }: { value: string; options: string[]; onPick: (v: string) => void }) {
   return (
-    <span style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end" }}>
+    <span style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-start" }}>
       {options.map((o) => (
-        <button
-          key={o} onClick={() => onPick(o)}
+        <button key={o} onClick={() => onPick(o)} aria-pressed={o === value}
           style={{
-            border: "1px solid rgba(255,255,255,.12)", borderRadius: 9,
-            background: o === value ? ACCENT : "rgba(255,255,255,.05)",
-            color: o === value ? "#171233" : C.soft,
-            fontSize: 11.5, padding: "6px 9px", cursor: "pointer",
-            textTransform: "capitalize", minHeight: 32,
+            ...chip(o === value, ACCENT),
+            fontSize: 12, padding: "0 10px", minHeight: 32,
+            textTransform: "capitalize",
           }}
         >
           {o}
@@ -423,23 +430,25 @@ function Override({
     setDraft(null);
   };
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
       <input
         type="number" inputMode="numeric" placeholder={String(auto)}
+        aria-label={`Override, automatic is ${auto} ${suffix}`}
         value={draft ?? (value == null ? "" : String(value))}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         style={fieldStyle}
       />
-      <span style={{ fontSize: 11.5, color: C.faint, width: 26 }}>{suffix}</span>
+      <span style={{ fontSize: 11.5, color: C.faint, width: 26, flex: "none" }}>{suffix}</span>
       <button
         onClick={() => { setDraft(null); onSave(null); }}
         disabled={value == null}
+        aria-label="Back to automatic"
         style={{
           border: "none", background: "none", cursor: value == null ? "default" : "pointer",
           color: value == null ? C.faint : ACCENT, fontSize: 11, padding: "4px 0",
-          minWidth: 30, textAlign: "left", opacity: value == null ? 0.4 : 1,
+          minWidth: 30, minHeight: H.chip, textAlign: "left", opacity: value == null ? 0.35 : 1,
         }}
       >
         auto

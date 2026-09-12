@@ -255,3 +255,30 @@ describe("date helpers used by the tab", () => {
     expect(shiftDays(-1, D)).toBe("2026-09-08");
   });
 });
+
+describe("sessionClock — a running session", () => {
+  const setAt = (at: string) => ev("lift", { ex: "Bench press", kg: 60, reps: 5, at }, today());
+
+  it("counts from the first set while the day is open", () => {
+    const c = sessionClock([setAt("17:40")], today(), "18:25");
+    expect(c.source).toBe("running");
+    expect(c.mins).toBe(45);
+  });
+
+  /**
+   * `dur` wraps past midnight on purpose, so a clock earlier than the first set used to
+   * come back as almost a whole day — "21h 15m · running" on a session that had not
+   * started. Sets backdated into this evening do that, and so does a phone whose clock
+   * moved backwards.
+   */
+  it("does not report a 21-hour session when now is before the first set", () => {
+    const c = sessionClock([setAt("17:40")], today(), "14:55");
+    expect(c.source).toBe("sets");
+    expect(c.mins).toBeLessThan(120);
+  });
+
+  it("still wraps correctly for a session that crossed midnight", () => {
+    const c = sessionClock([setAt("23:30")], today(), "00:20");
+    expect(c.source).toBe("sets");
+  });
+});

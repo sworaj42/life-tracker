@@ -15,37 +15,21 @@ import { useEffect, useState } from "react";
 import { eventsOfKind, logEvent, removeEvent, replaceOnDate, patchEvent } from "@/db/local";
 import { useLive, bump, useNow } from "@/db/store";
 import type { AnyEvent } from "@/db/types";
-import { today, localTime, shiftDays } from "@/lib/date";
+import { today, localTime, dur } from "@/lib/date";
 import {
   trainDay, sessionClock, suggestions, lastTime, prefill, summarise, rpeHue, RPE_WORDS,
   type SetRow, type TrainDay,
 } from "@/lib/calc/train";
 import { uuid } from "@/db/local";
-import { C, num } from "@/ui/tokens";
-import { INPUT, DayStrip } from "@/ui/kit";
+import { C, H, num } from "@/ui/tokens";
+import { Icon } from "@/ui/icons";
+import {
+  DayStrip, Empty, FieldLabel, INPUT, RULE, SUB, SectionTitle, TILE, chip, cta, ghostBtn,
+} from "@/ui/kit";
 
 const ACCENT = "#E0796F";
 const ON_ACCENT = "#1A0F0D";
 
-/** Both Train cards use the sub-card recipe, not the heavier tab card. */
-const CARD: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-  marginBottom: 10,
-};
-
-/** The inner block: start-an-exercise, the live exercise, the clock. */
-const SUB: React.CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  border: "1px solid rgba(255,255,255,.07)",
-  borderRadius: 12,
-  padding: "10px 12px",
-};
 
 export function Train() {
   const [date, setDate] = useState(today());
@@ -204,12 +188,12 @@ function LogCard({
   const prev = active ? lastTime(events, active, date) : null;
 
   return (
-    <section style={CARD}>
+    <section style={SUB}>
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "baseline",
         gap: 10, marginBottom: 12,
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>Log workout</span>
+        <SectionTitle>Log workout</SectionTitle>
         <span style={{ fontSize: 12, color: C.faint, ...num }}>
           {day.setCount > 0 && `${day.setCount} set${day.setCount === 1 ? "" : "s"}`}
           {day.dropCount > 0 && ` · ${day.dropCount} drop`}
@@ -226,10 +210,8 @@ function LogCard({
             {day.split ? `${day.split} day` : "Workout"} done — {day.setCount} sets,{" "}
             {Math.round(day.volume).toLocaleString()} kg
           </span>
-          <button onClick={() => void reopen()} style={{
-            border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-            borderRadius: 10, padding: "7px 12px", fontSize: 12.5, color: C.soft, cursor: "pointer",
-          }}>
+          <button onClick={() => void reopen()}
+            style={{ ...ghostBtn, height: H.chip, fontSize: 12.5, flex: "none" }}>
             Reopen
           </button>
         </div>
@@ -237,7 +219,7 @@ function LogCard({
         <>
           {showSplitInput ? (
             <>
-              <div style={{ fontSize: 12, color: C.soft, marginBottom: 7 }}>What day is it</div>
+              <FieldLabel style={{ marginBottom: 7 }}>What day is it</FieldLabel>
               <input
                 value={splitDraft}
                 onChange={(e) => setSplitDraft(e.target.value)}
@@ -269,12 +251,12 @@ function LogCard({
           )}
 
           {!active ? (
-            <div style={SUB}>
+            <div style={TILE}>
               <div style={{
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
                 gap: 8, marginBottom: 7,
               }}>
-                <span style={{ fontSize: 12, color: C.soft }}>Start an exercise</span>
+                <FieldLabel>Start an exercise</FieldLabel>
                 {/* Saying where the chips came from matters: "your last Push day" is a
                     reason to trust them, "recent" is a reason not to. */}
                 {suggested.names.length > 0 && (
@@ -288,11 +270,7 @@ function LogCard({
               {suggested.names.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 9 }}>
                   {suggested.names.map((s) => (
-                    <button key={s} onClick={() => start(s)} style={{
-                      border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.05)",
-                      borderRadius: 9, padding: "6px 10px", fontSize: 12.5, color: C.soft,
-                      cursor: "pointer",
-                    }}>
+                    <button key={s} onClick={() => start(s)} style={chip(false, ACCENT)}>
                       {s}
                     </button>
                   ))}
@@ -302,10 +280,10 @@ function LogCard({
                 <input value={name} onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && start(name)}
                   placeholder="Exercise name" style={INPUT} />
-                <button onClick={() => start(name)} style={{
-                  height: 38, padding: "0 16px", borderRadius: 11, border: "none",
-                  background: ACCENT, color: ON_ACCENT, fontSize: 13.5, fontWeight: 600,
-                  cursor: "pointer",
+                <button onClick={() => start(name)} disabled={!name.trim()} style={{
+                  ...cta(ACCENT, ON_ACCENT), width: "auto", padding: "0 18px",
+                  background: name.trim() ? ACCENT : "rgba(255,255,255,.08)",
+                  color: name.trim() ? ON_ACCENT : C.faint,
                 }}>
                   Start
                 </button>
@@ -313,7 +291,8 @@ function LogCard({
             </div>
           ) : (
             <div style={{
-              ...SUB, borderColor: "rgba(224,121,111,.35)", background: "rgba(224,121,111,.08)",
+              ...TILE, border: "1px solid rgba(224,121,111,.35)",
+              background: "rgba(224,121,111,.08)",
             }}>
               <div style={{
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
@@ -344,7 +323,7 @@ function LogCard({
               </div>
 
               {activeSets.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                <div style={{ ...SET_GRID, marginBottom: 10 }}>
                   {activeSets.map((s) => (
                     <SetChip
                       key={s.id} set={s} editing={editingSet?.id === s.id}
@@ -369,12 +348,12 @@ function LogCard({
                 gap: 8, marginBottom: 10,
               }}>
                 <div>
-                  <div style={{ fontSize: 11.5, color: C.soft, marginBottom: 4 }}>Weight kg</div>
+                  <FieldLabel style={{ fontSize: 11.5, marginBottom: 4 }}>Weight kg</FieldLabel>
                   <input value={kg} onChange={(e) => setKg(e.target.value)}
                     inputMode="decimal" style={{ ...INPUT, ...num }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 11.5, color: C.soft, marginBottom: 4 }}>Reps</div>
+                  <FieldLabel style={{ fontSize: 11.5, marginBottom: 4 }}>Reps</FieldLabel>
                   <input value={reps} onChange={(e) => setReps(e.target.value)}
                     inputMode="numeric" style={{ ...INPUT, ...num }} />
                 </div>
@@ -384,7 +363,7 @@ function LogCard({
                 display: "flex", justifyContent: "space-between", alignItems: "baseline",
                 marginBottom: 6,
               }}>
-                <span style={{ fontSize: 11.5, color: C.soft }}>Intensity</span>
+                <FieldLabel style={{ fontSize: 11.5 }}>Intensity</FieldLabel>
                 <span style={{ fontSize: 11.5, fontWeight: 600, color: rpeHue(rpe), ...num }}>
                   {RPE_WORDS[rpe]}
                 </span>
@@ -406,20 +385,18 @@ function LogCard({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8 }}>
-                <button onClick={() => void addSet()} style={{
-                  height: 42, borderRadius: 12, border: "none", background: ACCENT,
-                  color: ON_ACCENT, fontSize: 14, fontWeight: 600, cursor: "pointer",
+                <button onClick={() => void addSet()} disabled={!kg || !reps} style={{
+                  ...cta(ACCENT, ON_ACCENT),
+                  background: kg && reps ? ACCENT : "rgba(255,255,255,.08)",
+                  color: kg && reps ? ON_ACCENT : C.faint,
                 }}>
                   {editingSet ? "Save set" : "Add set"}
                 </button>
                 {/* A drop is the same exercise again, lighter and without rest. It does
                     not swap you to the other half of a superset. */}
-                <button onClick={() => void addSet(true)} disabled={!!editingSet} style={{
-                  height: 42, padding: "0 14px", borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                  color: editingSet ? C.faint : C.food, fontSize: 13.5,
-                  cursor: editingSet ? "not-allowed" : "pointer",
-                }}>
+                <button onClick={() => void addSet(true)} disabled={!!editingSet || !kg || !reps}
+                  title="Same exercise again, lighter and without rest"
+                  style={{ ...ghostBtn, color: editingSet ? C.faint : C.food }}>
                   Drop
                 </button>
               </div>
@@ -431,11 +408,8 @@ function LogCard({
                   <input value={addingPartner} onChange={(e) => setAddingPartner(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && pairWith(addingPartner)}
                     placeholder="Superset with…" style={{ ...INPUT, fontSize: 13 }} />
-                  <button onClick={() => pairWith(addingPartner)} style={{
-                    height: 42, padding: "0 14px", borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                    color: C.soft, fontSize: 13, cursor: "pointer",
-                  }}>
+                  <button onClick={() => pairWith(addingPartner)}
+                    disabled={!addingPartner.trim()} style={ghostBtn}>
                     Pair
                   </button>
                 </div>
@@ -443,11 +417,7 @@ function LogCard({
 
               <button
                 onClick={() => { setActive(null); setEditingSet(null); setPartner(null); setSsId(null); }}
-                style={{
-                  width: "100%", height: 40, marginTop: 8, borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                  color: C.soft, fontSize: 13.5, cursor: "pointer",
-                }}>
+                style={{ ...ghostBtn, width: "100%", height: 40, marginTop: 8, fontSize: 13.5 }}>
                 {partner ? "End superset" : `End ${active.length > 12 ? "exercise" : active.toLowerCase()}`}
               </button>
 
@@ -461,9 +431,8 @@ function LogCard({
 
           {day.setCount > 0 && (
             <button onClick={() => void endDay()} style={{
-              width: "100%", height: 40, marginTop: 10, borderRadius: 12,
-              border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-              color: ACCENT, fontSize: 13.5, fontWeight: 500, cursor: "pointer",
+              ...ghostBtn, width: "100%", height: 40, marginTop: 10,
+              color: ACCENT, fontSize: 13.5, fontWeight: 500,
             }}>
               End workout
             </button>
@@ -473,6 +442,13 @@ function LogCard({
     </section>
   );
 }
+
+/** Every set the same width, two to a row. */
+const SET_GRID: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(138px, 1fr))",
+  gap: 6,
+};
 
 const dayLabel = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -500,12 +476,12 @@ function SetChip({
 
   return (
     <span style={{
-      display: "inline-flex", alignItems: "stretch",
+      display: "flex", alignItems: "stretch",
       border: `1px solid ${armed ? "#D2685E" : editing ? hue : "rgba(255,255,255,.12)"}`,
       background: armed
         ? "rgba(210,104,94,.12)"
         : editing ? "rgba(255,255,255,.1)" : "rgba(255,255,255,.06)",
-      borderRadius: 9, minWidth: 96, overflow: "hidden",
+      borderRadius: 9, overflow: "hidden", minWidth: 0,
     }}>
       <button onClick={onEdit} title="Edit this set" style={{
         border: "none", background: "transparent", padding: "5px 4px 5px 9px",
@@ -515,8 +491,10 @@ function SetChip({
           <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
             {/* A drop and a superset leg are not ordinary sets, and reading the session
                 back later without knowing which is which loses the whole point. */}
-            {set.drop && <span style={{ color: C.food, fontSize: 10, fontWeight: 600 }}>↓</span>}
-            {set.ss && <span style={{ color: C.skill, fontSize: 10, fontWeight: 600 }}>⇄</span>}
+            {set.drop && <Icon name="drop" size={11} color={C.food} strokeWidth={2.4}
+              title="Drop set" style={{ alignSelf: "center" }} />}
+            {set.ss && <Icon name="superset" size={11} color={C.skill} strokeWidth={2.2}
+              title="Superset" style={{ alignSelf: "center" }} />}
             <span style={{ fontWeight: 600 }}>{set.kg}</span>
             <span style={{ color: C.soft }}>kg × {set.reps}</span>
             {set.rpe && <span style={{ color: hue, fontSize: 11, paddingLeft: 2 }}>@{set.rpe}</span>}
@@ -539,10 +517,11 @@ function SetChip({
         style={{
           border: "none", background: "transparent",
           color: armed ? "#D2685E" : C.faint, cursor: "pointer",
-          fontSize: armed ? 11 : 14, fontWeight: armed ? 600 : 400,
+          fontSize: 11, fontWeight: armed ? 600 : 400,
           padding: armed ? "0 8px" : "0 7px", lineHeight: 1, whiteSpace: "nowrap",
+          display: "flex", alignItems: "center",
         }}>
-        {armed ? "sure?" : "×"}
+        {armed ? "sure?" : <Icon name="close" size={13} strokeWidth={1.9} />}
       </button>
     </span>
   );
@@ -579,7 +558,7 @@ function SessionCard({
   const title = day.split ? `${day.split} day` : clock.source === "none" ? "Session" : "Workout";
 
   return (
-    <section style={CARD}>
+    <section style={SUB}>
       <DayStrip date={date} onChange={(d) => { setConfirming(false); setDate(d); }} />
       <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "12px 0" }} />
 
@@ -588,7 +567,7 @@ function SessionCard({
         const mins = Math.max(1, dur(p.start, p.end));
         return (
           <div key={e.id} style={{
-            ...SUB, marginBottom: 10, borderColor: "rgba(224,121,111,.22)",
+            ...TILE, marginBottom: 10, border: "1px solid rgba(224,121,111,.22)",
           }}>
             <div style={{
               display: "flex", justifyContent: "space-between", alignItems: "baseline",
@@ -623,14 +602,14 @@ function SessionCard({
       })}
 
       {clock.source === "none" && day.setCount === 0 && !day.split ? (
-        <div style={{ fontSize: 12, color: C.faint }}>Nothing logged for this day.</div>
+        <Empty>Nothing logged for this day.</Empty>
       ) : (
-        <div style={{ ...SUB, padding: "12px 14px 14px" }}>
+        <div style={{ ...TILE, padding: "12px 14px 14px" }}>
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
             gap: 10, marginBottom: 12,
           }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>{title}</span>
+            <SectionTitle>{title}</SectionTitle>
             <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
               <span style={{ fontSize: 12.5, color: C.faint, ...num }}>
                 {day.setCount === 0
@@ -659,16 +638,13 @@ function SessionCard({
                 Delete this whole session?
               </span>
               <span style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setConfirming(false)} style={{
-                  border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.05)",
-                  borderRadius: 9, padding: "6px 11px", fontSize: 12.5, color: C.soft,
-                  cursor: "pointer",
-                }}>
+                <button onClick={() => setConfirming(false)}
+                  style={{ ...ghostBtn, height: H.chip, fontSize: 12.5 }}>
                   Keep
                 </button>
                 <button onClick={() => void deleteDay()} style={{
-                  border: "none", background: "#D2685E", borderRadius: 9, padding: "6px 11px",
-                  fontSize: 12.5, fontWeight: 600, color: ON_ACCENT, cursor: "pointer",
+                  ...cta("#D2685E"), width: "auto", height: H.chip, padding: "0 12px",
+                  fontSize: 12.5,
                 }}>
                   Delete
                 </button>
@@ -747,11 +723,11 @@ function SessionCard({
           {day.setCount > 0 && (
             <div style={{
               display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12,
-              marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,.08)",
+              marginTop: 12, paddingTop: 12, borderTop: RULE,
             }}>
-              <Stat label="Volume" value={Math.round(day.volume).toLocaleString()} unit=" kg" />
-              <Stat label="Sets" value={String(day.setCount)} />
-              <Stat label="Top set" value={day.topSet} color={ACCENT} />
+              <Figure label="Volume" value={Math.round(day.volume).toLocaleString()} unit=" kg" />
+              <Figure label="Sets" value={String(day.setCount)} />
+              <Figure label="Top set" value={day.topSet} color={ACCENT} />
             </div>
           )}
         </div>
@@ -759,13 +735,13 @@ function SessionCard({
 
       {day.groups.map((g) => (
         <div key={g.id} style={{
-          paddingTop: 12, marginTop: 12, borderTop: "1px solid rgba(255,255,255,.08)",
+          paddingTop: 12, marginTop: 12, borderTop: RULE,
         }}>
           {g.superset && (
             <div style={{
               display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
             }}>
-              <span style={{ color: C.skill, fontSize: 11 }}>⇄</span>
+              <Icon name="superset" size={12} color={C.skill} strokeWidth={2.2} />
               <span style={{
                 fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase",
                 color: C.skill,
@@ -797,7 +773,7 @@ function SessionCard({
                       {x.count} × · {Math.round(x.volume).toLocaleString()} kg
                     </span>
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <div style={SET_GRID}>
                     {x.sets.map((sx) => (
                       <SetChip key={sx.id} set={sx} editing={false}
                         onEdit={() => onEditSet(sx)}
@@ -819,17 +795,8 @@ function SessionCard({
   );
 }
 
-function dur(a: string, b: string): number {
-  const m = (t: string) => {
-    const [h, mm] = t.split(":").map(Number);
-    return h * 60 + (mm || 0);
-  };
-  let d = m(b) - m(a);
-  if (d < 0) d += 1440;
-  return d;
-}
 
-function Stat({
+function Figure({
   label, value, unit, color,
 }: { label: string; value: string; unit?: string; color?: string }) {
   return (
@@ -843,4 +810,3 @@ function Stat({
   );
 }
 
-export { shiftDays };

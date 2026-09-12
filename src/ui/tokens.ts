@@ -1,11 +1,19 @@
 /**
  * Design tokens, measured from the prototype.
  *
+ * VALUES ONLY. Colours, the tab table, the intensity ramp — the things a screen reads
+ * to decide what something means. Every style RECIPE (cards, inputs, buttons, meters)
+ * lives in `kit.tsx`, because the recipes existed in both files and drifted: `tokens.card`
+ * and `kit.CARD` were the same eighteen declarations typed twice, and a fix to one never
+ * reached the other.
+ *
  * The handoff docs disagree with each other on the ground colour (START_HERE says
  * #0E1220, SPEC says #121829) and on the module accents. The prototype README settles
  * it: "Colours, spacing and copy are exact — port them rather than reinterpreting."
  * So these are the values in the code, and the code wins.
  */
+
+import type { CSSProperties } from "react";
 
 export const C = {
   // The APP SURFACE, not `body`. The prototype's body is #0C0E12, but that sits behind
@@ -33,6 +41,15 @@ export const C = {
   green: "#6FC29A",
 } as const;
 
+/**
+ * The one place a control height is decided.
+ *
+ * Buttons and inputs sitting in the same grid row were 38px and 42px in four different
+ * places, which is why "Start" never quite lined up with the field beside it. A field is
+ * 42, a chip is 34, a square icon button is 36, a day-strip arrow is 30.
+ */
+export const H = { field: 42, chip: 34, icon: 36, arrow: 30 } as const;
+
 /** Tab accents. Note the key/label mismatch: `money` shows as "Funds", `goals` as "Quests". */
 export const TABS = [
   { key: "today", label: "Today", accent: "#8FB6E8" },
@@ -43,6 +60,28 @@ export const TABS = [
 ] as const;
 
 export type TabKey = (typeof TABS)[number]["key"];
+
+/**
+ * The dark ink to put ON an accent.
+ *
+ * A filled accent button never takes white text — at these saturations white on amber is
+ * unreadable — so each accent carries the tint that goes on top of it. This was inlined
+ * as a magic hex in eleven places, and three of them disagreed about which one.
+ */
+export const ON: Record<string, string> = {
+  "#8FB6E8": "#0E1626",
+  "#E2B461": "#1F1708",
+  "#E0796F": "#1A0F0D",
+  "#6FC29A": "#0F1A14",
+  "#B6A6E8": "#171233",
+  "#C9BE93": "#1A170F",
+  "#5FB2E0": "#07202C",
+  "#C08A5E": "#1E1208",
+  "#D2685E": "#1A0F0D",
+};
+
+/** The dark ink for an accent, falling back to a near-black that works on any of them. */
+export const onAccent = (accent: string): string => ON[accent] ?? "#12131A";
 
 export const STAGE = {
   asleepDeep: { label: "Deep", color: "#3A4FB0" },
@@ -67,105 +106,5 @@ export const RPE_WORDS = [
   "solid", "hard", "very hard", "near failure", "all out",
 ];
 
-// ---------------------------------------------------------------------------
-// Recipes — the repeated inline-style blocks from the prototype, named once.
-// ---------------------------------------------------------------------------
-
-import type { CSSProperties } from "react";
-
-export const card: CSSProperties = {
-  background: "rgba(255,255,255,.07)",
-  backdropFilter: "blur(22px) saturate(1.25)",
-  WebkitBackdropFilter: "blur(22px) saturate(1.25)",
-  border: "1px solid rgba(255,255,255,.1)",
-  borderRadius: 18,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.09), 0 8px 24px rgba(0,0,0,.18)",
-  padding: "14px 16px 16px",
-  marginBottom: 10,
-};
-
-export const subCard: CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(255,255,255,.08)",
-  borderRadius: 14,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)",
-  padding: "14px 16px",
-};
-
-export const tile: CSSProperties = {
-  background: "rgba(255,255,255,.05)",
-  border: "1px solid rgba(255,255,255,.07)",
-  borderRadius: 12,
-  padding: "10px 12px",
-};
-
-export const input: CSSProperties = {
-  border: "1px solid rgba(255,255,255,.1)",
-  borderRadius: 10,
-  background: "rgba(255,255,255,.05)",
-  padding: "10px 12px",
-  fontSize: 14,
-  color: C.ink,
-  outline: "none",
-  width: "100%",
-};
-
-/** Ghost icon button. 30px is the day-nav arrow; 36px the water/coffee ±. */
-export function ghostButton(size: 30 | 36 = 30, color: string = C.ink): CSSProperties {
-  return {
-    width: size,
-    height: size,
-    borderRadius: size === 36 ? 11 : 9,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(255,255,255,.07)",
-    cursor: "pointer",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    color,
-    fontSize: size === 36 ? 18 : 14,
-  };
-}
-
-/** Filled accent CTA. Ink is a dark tint of the accent, never white. */
-export function cta(accent: string, ink = "#171233"): CSSProperties {
-  return {
-    height: 46,
-    borderRadius: 13,
-    border: "none",
-    background: accent,
-    color: ink,
-    fontSize: 14.5,
-    fontWeight: 600,
-    cursor: "pointer",
-    width: "100%",
-  };
-}
-
-export const eyebrow: CSSProperties = {
-  fontSize: 11,
-  letterSpacing: ".08em",
-  textTransform: "uppercase",
-  color: C.faint,
-  marginBottom: 10,
-};
-
-export const cardTitle: CSSProperties = {
-  fontSize: 15,
-  fontWeight: 600,
-  color: C.ink,
-};
-
+/** Numbers are always tabular, so a column of them does not jitter as it updates. */
 export const num: CSSProperties = { fontVariantNumeric: "tabular-nums" };
-
-/** Progress bar. Track heights in use: 6→r3, 8→r4, 10→r5. */
-export function meterTrack(height = 6): CSSProperties {
-  return {
-    height,
-    background: "rgba(255,255,255,.1)",
-    borderRadius: height / 2,
-    overflow: "hidden",
-  };
-}
