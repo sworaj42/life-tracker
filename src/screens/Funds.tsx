@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import {
-  eventsOfKind, getProfile, saveProfile, logEvent, removeEvent,
+  eventsOfKind, getProfile, saveProfile, logEvent, removeEvent, patchEvent,
   getHideBalance, setHideBalance,
   getCategories, getCategoriesRaw, addCategory, renameCategory, hideCategory,
   countByCategory,
@@ -29,7 +29,7 @@ import {
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
 import {
-  CARD, DateField, DayStrip, Empty, FieldLabel, INPUT, Meter, PageHead, RULE, RemoveButton, SUB, SectionTitle, Segmented, caption, chip, cta, ghost, useHold,
+  CARD, DateField, DayStrip, Empty, FieldLabel, INPUT, Meter, PageHead, RULE, RemoveButton, SUB, SectionTitle, Segmented, caption, chip, cta, ghost, ghostBtn, useHold,
 } from "@/ui/kit";
 import { Icon } from "@/ui/icons";
 import { BarChart, LineChart } from "@/ui/charts";
@@ -466,6 +466,7 @@ function Chip({
   return (
     <button
       {...hold.bind}
+      aria-pressed={selected}
       onClick={() => { if (!hold.held.current) onPick(); }}
       style={{ ...chip(selected, ACCENT), ...hold.style }}>
       {name}
@@ -535,11 +536,11 @@ function AddExpense() {
       <SectionTitle style={{ marginBottom: 12 }}>Add expense</SectionTitle>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 8 }}>
         <input value={amount} onChange={(e) => setAmount(e.target.value)}
-          inputMode="numeric" placeholder="Rs"
+          inputMode="numeric" placeholder="Rs" aria-label="Amount"
           style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
         <input value={label} onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void save()}
-          placeholder="What was it" style={INPUT} />
+          placeholder="What was it" aria-label="What was it" style={INPUT} />
       </div>
       <DateField value={date} max={today()} ariaLabel="Date"
         onChange={(v) => v && setDate(v)} style={{ marginTop: 8 }} />
@@ -573,11 +574,55 @@ function AddExpense() {
 
 // ---------------------------------------------------------------------------
 
-function TxnRow({ t, onDelete }: { t: Txn; onDelete: () => void }) {
+/**
+ * A list of transactions, with the affordance that says how to edit one.
+ *
+ * Holding a row is invisible unless something says so, and it is said once per list
+ * rather than once per row.
+ */
+function TxnList({ rows, empty }: { rows: Txn[]; empty: string }) {
+  // One at a time, like the Today log: a second hold moves the editor rather than
+  // stacking a second set of fields under the first.
+  const [editing, setEditing] = useState<string | null>(null);
+
+  if (rows.length === 0) return <Empty>{empty}</Empty>;
   return (
-    <div style={{
+    <>
+      {rows.map((t) => (
+        <TxnRow key={t.id} t={t}
+          editing={editing === t.id}
+          onEdit={() => setEditing(t.id)}
+          onDone={() => setEditing(null)}
+          onDelete={async () => { setEditing(null); await removeEvent(t.id); bump(); }} />
+      ))}
+      <div style={{ fontSize: 11.5, color: C.faint, paddingTop: 8, textAlign: "right" }}>
+        Hold a row to edit it
+      </div>
+    </>
+  );
+}
+
+/**
+ * One transaction.
+ *
+ * Hold it to correct it — the same gesture that renames a category two cards up, and the
+ * one the Today log uses. SPEC §6 asks for "editing any transaction" and there was no way
+ * to do it at all: a wrong amount or a mis-tapped category could only be deleted and
+ * retyped, which loses the date you had set and the receipt path if one existed.
+ */
+function TxnRow({
+  t, editing, onEdit, onDone, onDelete,
+}: {
+  t: Txn; editing: boolean; onEdit: () => void; onDone: () => void; onDelete: () => void;
+}) {
+  const hold = useHold(onEdit);
+
+  if (editing) return <TxnEditor t={t} onDone={onDone} onDelete={onDelete} />;
+
+  return (
+    <div {...hold.bind} title="Hold to edit" style={{
       display: "flex", alignItems: "baseline", gap: 8, padding: "8px 0",
-      borderTop: RULE,
+      borderTop: RULE, ...hold.style,
     }}>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 13, color: C.ink }}>{t.label}</span>
@@ -593,7 +638,93 @@ function TxnRow({ t, onDelete }: { t: Txn; onDelete: () => void }) {
       }}>
         {t.kind === "income" ? "+" : ""}{rs(t.amount)}
       </span>
-      <RemoveButton onClick={onDelete} label={`Remove ${t.label}`} />
+      {/* The × sits inside the held row, so its own press must not also start the hold —
+          otherwise deleting a row with a slow thumb opens the editor behind it. */}
+      <span onPointerDown={(e) => e.stopPropagation()} style={{ display: "flex" }}>
+        <RemoveButton onClick={onDelete} label={`Remove ${t.label}`} />
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The row, opened for correction in place.
+ *
+ * Amount, description, date and category — the same four fields Add expense writes, in
+ * the same order, so correcting one looks like entering one. It replaces the row rather
+ * than opening below it: these lists are read on a phone and a panel that pushes the rest
+ * of the day off the screen loses the context you were checking against.
+ *
+ * The receipt path is not shown and not touched. Nothing can attach one yet, and silently
+ * dropping it on every edit would quietly empty the field the moment receipts land.
+ */
+function TxnEditor({
+  t, onDone, onDelete,
+}: { t: Txn; onDone: () => void; onDelete: () => void }) {
+  const [amount, setAmount] = useState(String(Math.round(t.amount)));
+  const [label, setLabel] = useState(t.label);
+  const [cat, setCat] = useState(t.cat);
+  const [date, setDate] = useState(t.date);
+
+  const n = Number(amount);
+  const ready = Number.isFinite(n) && n > 0;
+  const changed = ready
+    && (Math.round(n) !== Math.round(t.amount) || label.trim() !== t.label
+      || cat !== t.cat || date !== t.date);
+
+  const save = async () => {
+    if (!ready) return;
+    const c = cat.trim() || "Other";
+    await addCategory(t.kind, c);
+    await patchEvent(
+      t.id,
+      (p) => ({ ...p, amount: n, cat: c, label: label.trim() || c }),
+      { local_date: date },
+    );
+    onDone();
+    bump();
+  };
+
+  const keys = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") void save();
+    if (e.key === "Escape") onDone();
+  };
+
+  return (
+    <div style={{ padding: "10px 0", borderTop: RULE }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 8 }}>
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={keys}
+          inputMode="numeric" autoFocus aria-label="Edit amount"
+          style={{ ...INPUT, fontSize: 16, fontWeight: 600, ...num }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={keys}
+          aria-label="Edit description" placeholder={cat || "What was it"} style={INPUT} />
+      </div>
+      <DateField value={date} max={today()} ariaLabel="Edit date"
+        onChange={(v) => v && setDate(v)} style={{ marginTop: 8 }} />
+
+      <CategoryPicker kind={t.kind} value={cat} onPick={setCat}
+        label={t.kind === "income" ? "Source" : "Category"} />
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 8, marginTop: 12,
+      }}>
+        <button onClick={() => void save()} disabled={!changed} style={{
+          ...cta(ACCENT, ON_ACCENT),
+          background: changed ? ACCENT : "rgba(255,255,255,.08)",
+          color: changed ? ON_ACCENT : C.faint,
+          ...num,
+        }}>
+          {changed ? `Save ${rs(n)}` : "Save"}
+        </button>
+        <button onClick={onDone} style={ghostBtn}>Cancel</button>
+        <button onClick={onDelete} aria-label={`Delete ${t.label}`} style={{
+          ...ghostBtn, padding: "0 12px",
+          border: "1px solid rgba(224,122,111,.4)", background: "rgba(224,122,111,.12)",
+          color: C.red,
+        }}>
+          <Icon name="trash" size={15} strokeWidth={1.7} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -614,12 +745,7 @@ function DaySpend({ txns }: { txns: Txn[] }) {
       <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, ...num }}>
         {rs(spentOn(txns, date))}
       </div>
-      {rows.length === 0
-        ? <Empty>Nothing logged.</Empty>
-        : rows.map((t) => (
-          <TxnRow key={t.id} t={t}
-            onDelete={async () => { await removeEvent(t.id); bump(); }} />
-        ))}
+      <TxnList rows={rows} empty="Nothing logged." />
     </div>
   );
 }
@@ -643,14 +769,7 @@ function FindTransaction({ txns }: { txns: Txn[] }) {
           Clear date
         </button>
       )}
-      {(query || date) && (
-        results.length === 0
-          ? <Empty>Nothing found.</Empty>
-          : results.map((t) => (
-            <TxnRow key={t.id} t={t}
-              onDelete={async () => { await removeEvent(t.id); bump(); }} />
-          ))
-      )}
+      {(query || date) && <TxnList rows={results} empty="Nothing found." />}
     </div>
   );
 }
@@ -827,11 +946,11 @@ function BalancePage({
         <SectionTitle style={{ marginBottom: 12 }}>Add to balance</SectionTitle>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 8 }}>
           <input value={amount} onChange={(e) => setAmount(e.target.value)}
-            inputMode="numeric" placeholder="Rs"
+            inputMode="numeric" placeholder="Rs" aria-label="Amount"
             style={{ ...INPUT, fontSize: 18, fontWeight: 600, ...num }} />
           <input value={label} onChange={(e) => setLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void save()}
-            placeholder="What was it for" style={INPUT} />
+            placeholder="What was it for" aria-label="What was it for" style={INPUT} />
         </div>
         <DateField value={date} max={today()} ariaLabel="Date"
           onChange={(v) => v && setDate(v)} style={{ marginTop: 8 }} />
@@ -855,12 +974,7 @@ function BalancePage({
 
       <section style={CARD}>
         <SectionTitle style={{ marginBottom: 4 }}>Recently added</SectionTitle>
-        {recent.length === 0
-          ? <Empty>Nothing added yet.</Empty>
-          : recent.map((t) => (
-            <TxnRow key={t.id} t={t}
-              onDelete={async () => { await removeEvent(t.id); bump(); }} />
-          ))}
+        <TxnList rows={recent} empty="Nothing added yet." />
       </section>
 
       <FindEntry txns={txns} />
@@ -923,14 +1037,7 @@ function FindEntry({ txns }: { txns: Txn[] }) {
           Clear date
         </button>
       )}
-      {(query || date) && (
-        results.length === 0
-          ? <Empty>Nothing found.</Empty>
-          : results.map((t) => (
-            <TxnRow key={t.id} t={t}
-              onDelete={async () => { await removeEvent(t.id); bump(); }} />
-          ))
-      )}
+      {(query || date) && <TxnList rows={results} empty="Nothing found." />}
     </section>
   );
 }

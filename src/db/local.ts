@@ -143,10 +143,19 @@ export async function logEvent<K extends Kind>(
   return putEvent(makeEvent(kind, payload, opts));
 }
 
-/** Patch an event's payload. Used by every edit path. */
+/**
+ * Patch an event's payload, and optionally move it to another day.
+ *
+ * `local_date` is the authority for which day a row belongs to; `occurred_at` is left
+ * alone deliberately. That is already the app's convention, not a shortcut: a backdated
+ * expense is written by `logEvent` with today's `occurred_at` and a past `local_date`, so
+ * re-dating one on the edit screen produces exactly the same shape as entering it
+ * backdated in the first place.
+ */
 export async function patchEvent(
   id: string,
   fn: (p: Record<string, unknown>) => Record<string, unknown>,
+  opts: { local_date?: string } = {},
 ): Promise<void> {
   const d = await db();
   const ev = await d.get("events", id);
@@ -154,6 +163,7 @@ export async function patchEvent(
   const next = {
     ...ev,
     payload: fn(ev.payload as Record<string, unknown>),
+    ...(opts.local_date ? { local_date: opts.local_date } : {}),
     updated_at: new Date().toISOString(),
   } as AnyEvent;
   await d.put("events", next);
