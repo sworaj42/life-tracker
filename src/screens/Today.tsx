@@ -11,7 +11,7 @@
  * comes back.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   eventsOfKindOnDate, eventsOfKind, getProfile, logEvent, patchEvent, removeEvent,
   replaceOnDate,
@@ -687,8 +687,9 @@ function Paper({ children }: { children: React.ReactNode }) {
  * The day's plan — a list on the same paper as the note, ticked the way you would on
  * paper: the whole line struck through, and a tick at the end of it.
  *
- * Tap a line to tick it, tap again to take it back. Hold one to reword or delete it,
- * the same gesture as the log below. Anything left undone carries into the next day
+ * Double-tap a line to tick it, double-tap again to take it back — a single tap is too
+ * easy to land while scrolling. Hold one to reword or delete it, the same gesture as the
+ * log below. Lines never move when ticked. Anything left undone carries into the next day
  * (see `planFor`), so the list never has to be copied forward by hand.
  */
 function PlanCard() {
@@ -748,7 +749,7 @@ function PlanCard() {
                 onCancel={() => setEditing(null)}
                 onDelete={async () => { await removeEvent(i.id); setEditing(null); bump(); }} />
             ) : (
-              <PlanLine key={i.id} item={i} onTap={() => void toggle(i)}
+              <PlanLine key={i.id} item={i} onDoubleTap={() => void toggle(i)}
                 onHold={() => setEditing(i.id)} />
             ),
           )}
@@ -770,7 +771,7 @@ function PlanCard() {
           fontSize: 11.5, color: C.faint, marginTop: 8, ...num,
         }}>
           <span>{done} of {items.length} done</span>
-          <span>Tap to tick · hold to edit</span>
+          <span>Double-tap to tick · hold to edit</span>
         </div>
       )}
     </section>
@@ -802,21 +803,38 @@ function PenTick() {
   );
 }
 
+/** Two taps this close together are a double tap. */
+const DOUBLE_TAP_MS = 320;
+
 function PlanLine({
-  item, onTap, onHold,
-}: { item: PlanItem; onTap: () => void; onHold: () => void }) {
+  item, onDoubleTap, onHold,
+}: { item: PlanItem; onDoubleTap: () => void; onHold: () => void }) {
   const hold = useHold(onHold);
+  // Counted by hand rather than with `onDoubleClick`, which iOS Safari only fires
+  // reliably on some elements — and a missed double tap reads as a broken list.
+  const lastTap = useRef(0);
+  const tap = () => {
+    if (hold.held.current) return;
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      onDoubleTap();
+    } else {
+      lastTap.current = now;
+    }
+  };
   const carried = item.carried
     ? new Date(item.carried + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" })
     : null;
 
   return (
     <div {...hold.bind}
-      onClick={() => { if (!hold.held.current) onTap(); }}
+      onClick={tap}
       role="checkbox" aria-checked={item.done}
       style={{
         display: "flex", alignItems: "flex-start", gap: 8, minHeight: LINE,
-        cursor: "pointer", ...hold.style,
+        // No double-tap-to-zoom on the gesture that ticks.
+        cursor: "pointer", touchAction: "manipulation", ...hold.style,
       }}>
       <span style={{ height: LINE, display: "flex", alignItems: "center", flex: "none" }}>
         <Bullet />

@@ -18,9 +18,9 @@ const TUE = "2026-10-20";
 const WED = "2026-10-21";
 
 describe("the day's plan", () => {
-  it("shows the day's items, undone first", () => {
+  it("keeps every line where it was written, ticked or not", () => {
     const evs = [todo("gym", TUE, true, TUE), todo("call bank", TUE), todo("essay", TUE)];
-    expect(planFor(evs, TUE, TUE).map((i) => i.text)).toEqual(["call bank", "essay", "gym"]);
+    expect(planFor(evs, TUE, TUE).map((i) => i.text)).toEqual(["gym", "call bank", "essay"]);
   });
 
   it("carries undone items into today, tagged with the day they were planned", () => {

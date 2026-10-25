@@ -34,7 +34,9 @@ export function planFor(events: AnyEvent[], date: string, asOf = today()): PlanI
     .sort((a, b) =>
       a.local_date.localeCompare(b.local_date) || a.occurred_at.localeCompare(b.occurred_at));
 
-  const items = rows.map((e) => {
+  // In the order it was planned, done or not. Ticking a line on paper does not move it,
+  // and a list that reshuffles under your thumb is how the wrong line gets ticked next.
+  return rows.map((e) => {
     const p = e.payload as { text: string; done: boolean };
     return {
       id: e.id,
@@ -43,6 +45,4 @@ export function planFor(events: AnyEvent[], date: string, asOf = today()): PlanI
       carried: e.local_date < date ? e.local_date : null,
     };
   });
-  // Still to do first; what is done sinks, in the order it was planned.
-  return [...items.filter((i) => !i.done), ...items.filter((i) => i.done)];
 }
