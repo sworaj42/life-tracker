@@ -198,7 +198,7 @@ export async function seedDev(): Promise<void> {
     }
 
     // Tracked work, and what it was.
-    const tracks: Track[] = ["license", "masters", "skills", "gaming"];
+    const tracks: Track[] = ["research", "masters", "skills", "gaming"];
     const sessions = Math.floor(r() * 3);
     for (let s = 0; s < sessions; s++) {
       const track = pick(r, tracks);
