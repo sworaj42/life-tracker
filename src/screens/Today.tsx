@@ -1,12 +1,14 @@
 /**
- * Today — sleep, weight, water, coffee, what I did, the note.
+ * Today — the plan, weight, water, coffee, what I did, the note.
  *
  * Ported from the prototype rather than reinterpreted: the card recipes, the inline
  * chevrons, the glass and mug paths, and the paper note are lifted from
  * `docs/spiralout.dc.html`, whose README is explicit that colours, spacing and copy are
  * exact and should be ported rather than re-derived.
  *
- * Sleep is read-only: it comes from Health, and if it is wrong you fix it in Health.
+ * Sleep used to open the tab. Its card is gone but its data is not: Health still writes
+ * the segments, and `SleepPage` and `lib/calc/sleep` are left in place for when it
+ * comes back.
  */
 
 import { useState } from "react";
@@ -16,24 +18,23 @@ import {
 } from "@/db/local";
 import { useLive, bump } from "@/db/store";
 import { DEFAULT_PROFILE, type AnyEvent, type Profile } from "@/db/types";
-import { today, localTime, nowMin, dur } from "@/lib/date";
+import { today, localTime, nowMin, dur, shiftDays } from "@/lib/date";
 import { waterDay } from "@/lib/calc/water";
 import { coffeeDay } from "@/lib/calc/coffee";
 import { weightStats } from "@/lib/calc/weight";
-import { nightOf, hm } from "@/lib/calc/sleep";
-import { C, H, STAGE, num, onAccent } from "@/ui/tokens";
+import { planFor, type PlanItem } from "@/lib/calc/todo";
+import { C, H, num, onAccent } from "@/ui/tokens";
 import {
   CARD, DayStrip, Empty, INPUT, Meter, RULE, RemoveButton, SectionTitle, TILE, TitleLink, ghost, useHold,
 } from "@/ui/kit";
 import { Icon } from "@/ui/icons";
-import { SleepPage } from "./detail/SleepPage";
 import { WeightPage } from "./detail/WeightPage";
 import { WaterPage } from "./detail/WaterPage";
 import { CoffeePage } from "./detail/CoffeePage";
 
 // ---------------------------------------------------------------------------
 
-type Page = "sleep" | "weight" | "water" | "coffee" | null;
+type Page = "weight" | "water" | "coffee" | null;
 
 export function Today() {
   const [page, setPage] = useState<Page>(null);
@@ -42,7 +43,6 @@ export function Today() {
   const weights = useLive<AnyEvent[]>(() => eventsOfKind("weight"), [], []);
   const water = useLive<AnyEvent[]>(() => eventsOfKindOnDate("water", d), [d], []);
   const coffee = useLive<AnyEvent[]>(() => eventsOfKindOnDate("coffee", d), [d], []);
-  const sleep = useLive<AnyEvent[]>(() => eventsOfKindOnDate("sleep", d), [d], []);
   const lifts = useLive<AnyEvent[]>(() => eventsOfKindOnDate("lift", d), [d], []);
 
   const stats = weightStats(weights);
@@ -50,14 +50,13 @@ export function Today() {
   const cof = coffeeDay(coffee, profile, nowMin());
 
   const back = () => setPage(null);
-  if (page === "sleep") return <SleepPage onBack={back} />;
   if (page === "weight") return <WeightPage onBack={back} />;
   if (page === "water") return <WaterPage onBack={back} />;
   if (page === "coffee") return <CoffeePage onBack={back} />;
 
   return (
     <>
-      <SleepCard segments={sleep} date={d} onOpen={() => setPage("sleep")} />
+      <PlanCard />
       <WeightCard stats={stats} onOpen={() => setPage("weight")} />
       <div className="half-grid" style={{
         display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10,
@@ -77,72 +76,6 @@ export function Today() {
 /** "45m", "2h 05m" — a duration short enough to sit at the end of a log row. */
 const shortDur = (mins: number) =>
   mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
-
-function SleepCard({
-  segments, date, onOpen,
-}: { segments: AnyEvent[]; date: string; onOpen: () => void }) {
-  const night = nightOf(segments, date);
-  // Only the three asleep stages get a legend entry, each with its duration. `awake` and
-  // `inBed` are in the bar, because a broken night should look broken, but they are not
-  // sleep and do not get a number.
-  const stages = (["asleepDeep", "asleepCore", "asleepREM"] as const)
-    .map((v) => ({
-      label: STAGE[v].label,
-      color: STAGE[v].color,
-      mins: night?.segments.filter((s) => s.value === v).reduce((a, s) => a + s.mins, 0) ?? 0,
-    }))
-    .filter((s) => s.mins > 0);
-
-  return (
-    <section style={{ ...CARD, padding: "10px 16px 16px" }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        gap: 10, minHeight: 44,
-      }}>
-        <TitleLink label="Sleep" color="#8FB6E8" onClick={onOpen} minHeight={44} />
-        {night && (
-          <span style={{ fontSize: 12.5, color: C.soft, whiteSpace: "nowrap", ...num }}>
-            {fmt(night.bed)}–{fmt(night.wake)}
-          </span>
-        )}
-      </div>
-
-      {!night ? (
-        <div style={{ fontSize: 12.5, color: C.faint, paddingTop: 2, lineHeight: 1.5 }}>
-          No sleep recorded. This comes from Health.
-        </div>
-      ) : (
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.1, marginBottom: 9, ...num }}>
-            {hm(night.asleep)}
-            <span style={{ fontSize: 13, fontWeight: 400, color: C.soft }}> asleep</span>
-          </div>
-          <div style={{ display: "flex", height: 16, borderRadius: 4, overflow: "hidden", gap: 1 }}>
-            {night.segments.map((s, i) => (
-              <div key={i} title={`${STAGE[s.value].label} ${hm(s.mins)}`}
-                style={{ flex: s.mins, background: STAGE[s.value].color }} />
-            ))}
-          </div>
-          <div style={{
-            display: "flex", gap: 14, marginTop: 9, fontSize: 12.5, color: C.soft, flexWrap: "wrap",
-          }}>
-            {stages.map((s) => (
-              <span key={s.label} style={{
-                display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-              }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
-                {s.label} <span style={{ color: C.faint, ...num }}>{hm(s.mins)}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-const fmt = (mins: number) =>
-  `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 
 // ---------------------------------------------------------------------------
 
@@ -708,6 +641,234 @@ function RowEditor({
 
 // ---------------------------------------------------------------------------
 
+/** Ink on the paper, and the rules it sits on — shared by the plan and the note. */
+const INK = "#2B2415";
+const CARET = "#7A5B22";
+const LINE = 26;
+const RULED =
+  `repeating-linear-gradient(to bottom, transparent 0, transparent ${LINE - 1}px,` +
+  ` rgba(0,0,0,.10) ${LINE - 1}px, rgba(0,0,0,.10) ${LINE}px)`;
+const HAND: React.CSSProperties = {
+  fontFamily: "'Instrument Sans', system-ui, sans-serif",
+  fontSize: 14, lineHeight: `${LINE}px`, color: INK,
+};
+
+/**
+ * The paper sticky.
+ *
+ * The dog-ear is CUT, not painted over. The prototype covers the corner with a solid
+ * #121829 triangle, which only disappears if the thing behind is flat #121829 — here the
+ * note sits on a translucent card over a gradient, so a solid patch reads as a grey
+ * block. Clipping the corner shows whatever is actually behind it, on any background.
+ */
+function Paper({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      position: "relative", borderRadius: "3px 3px 3px 14px",
+      background: "linear-gradient(160deg,#E8D9A8 0%,#DFCE99 62%,#D6C48D 100%)",
+      boxShadow: "0 10px 22px rgba(0,0,0,.32)", overflow: "hidden",
+      clipPath: "polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)",
+    }}>
+      {/* The fold's shadow. Its outer half falls in the cut area and is clipped away,
+          leaving exactly the triangle that reads as folded paper. */}
+      <div style={{
+        position: "absolute", right: 0, top: 0, width: 26, height: 26,
+        background: "linear-gradient(225deg, rgba(0,0,0,.22) 0 50%, transparent 50%)",
+        pointerEvents: "none",
+      }} />
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The day's plan — a list on the same paper as the note, ticked the way you would on
+ * paper: the whole line struck through, and a tick at the end of it.
+ *
+ * Tap a line to tick it, tap again to take it back. Hold one to reword or delete it,
+ * the same gesture as the log below. Anything left undone carries into the next day
+ * (see `planFor`), so the list never has to be copied forward by hand.
+ */
+function PlanCard() {
+  const [date, setDate] = useState(today());
+  const all = useLive<AnyEvent[]>(() => eventsOfKind("todo"), [], []);
+  const items = planFor(all, date);
+  const [text, setText] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const isToday = date === today();
+  const done = items.filter((i) => i.done).length;
+
+  const add = async () => {
+    const t = text.trim();
+    if (!t) return;
+    await logEvent("todo", { text: t, done: false }, { local_date: date });
+    setText("");
+    bump();
+  };
+
+  const toggle = async (i: PlanItem) => {
+    // Ticked on the day it was ticked, not the day it is being looked at: ticking
+    // a past day's leftover from that day's page still counts as done today.
+    const on = today();
+    await patchEvent(i.id, (p) =>
+      i.done ? { ...p, done: false, done_on: undefined } : { ...p, done: true, done_on: on });
+    bump();
+  };
+
+  const save = async (i: PlanItem, t: string) => {
+    const v = t.trim();
+    if (!v) await removeEvent(i.id);
+    else if (v !== i.text) await patchEvent(i.id, (p) => ({ ...p, text: v }));
+    setEditing(null);
+    bump();
+  };
+
+  return (
+    <section style={CARD}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        gap: 8, flexWrap: "wrap", marginBottom: 12,
+      }}>
+        <SectionTitle>{isToday ? "Today\u2019s plan" : "Plan"}</SectionTitle>
+        <DayStrip date={date} onChange={(d) => { setEditing(null); setDate(d); }}
+          compact max={shiftDays(30)} />
+      </div>
+
+      <Paper>
+        <div style={{
+          backgroundImage: RULED, padding: "9px 30px 12px 14px", minHeight: 112,
+          boxSizing: "border-box",
+        }}>
+          {items.map((i) =>
+            editing === i.id ? (
+              <PlanEditor key={i.id} item={i}
+                onSave={(t) => void save(i, t)}
+                onCancel={() => setEditing(null)}
+                onDelete={async () => { await removeEvent(i.id); setEditing(null); bump(); }} />
+            ) : (
+              <PlanLine key={i.id} item={i} onTap={() => void toggle(i)}
+                onHold={() => setEditing(i.id)} />
+            ),
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, height: LINE }}>
+            <Bullet faint />
+            <input value={text} onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void add()}
+              onBlur={() => void add()}
+              aria-label="Add to the plan" placeholder="Add something…"
+              enterKeyHint="done"
+              style={{ ...PAPER_INPUT, caretColor: CARET }} />
+          </div>
+        </div>
+      </Paper>
+
+      {items.length > 0 && (
+        <div style={{
+          display: "flex", justifyContent: "space-between", gap: 10,
+          fontSize: 11.5, color: C.faint, marginTop: 8, ...num,
+        }}>
+          <span>{done} of {items.length} done</span>
+          <span>Tap to tick · hold to edit</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const PAPER_INPUT: React.CSSProperties = {
+  ...HAND, flex: 1, minWidth: 0, height: LINE, padding: 0, border: "none", outline: "none",
+  background: "transparent",
+};
+
+function Bullet({ faint }: { faint?: boolean }) {
+  return (
+    <span aria-hidden style={{
+      width: 5, height: 5, borderRadius: "50%", flex: "none",
+      background: INK, opacity: faint ? 0.3 : 0.75,
+    }} />
+  );
+}
+
+/** A pen tick — slightly uneven, so it reads as drawn rather than as a checkbox. */
+function PenTick() {
+  return (
+    <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden
+      style={{ flex: "none", marginLeft: 6, verticalAlign: "-1px" }}>
+      <path d="M1.5 7.6 C3 8.6 4.6 10.4 6.2 12.4 C8.6 7.6 12.2 3.6 16.6 1.2"
+        fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PlanLine({
+  item, onTap, onHold,
+}: { item: PlanItem; onTap: () => void; onHold: () => void }) {
+  const hold = useHold(onHold);
+  const carried = item.carried
+    ? new Date(item.carried + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" })
+    : null;
+
+  return (
+    <div {...hold.bind}
+      onClick={() => { if (!hold.held.current) onTap(); }}
+      role="checkbox" aria-checked={item.done}
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 8, minHeight: LINE,
+        cursor: "pointer", ...hold.style,
+      }}>
+      <span style={{ height: LINE, display: "flex", alignItems: "center", flex: "none" }}>
+        <Bullet />
+      </span>
+      <span style={{ flex: 1, minWidth: 0, ...HAND }}>
+        {/* The strike is the ink colour, not a lighter grey: a pen crosses the line in
+            the same pen. Only the words fade, so the line through them stays legible. */}
+        <span style={{
+          textDecoration: item.done ? "line-through" : "none",
+          textDecorationColor: INK, textDecorationThickness: 1.5,
+          color: item.done ? "rgba(43,36,21,.55)" : INK,
+        }}>
+          {item.text}
+        </span>
+        {item.done && <PenTick />}
+        {carried && !item.done && (
+          <span style={{ fontSize: 11, color: "rgba(43,36,21,.5)", marginLeft: 8 }}>
+            from {carried}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function PlanEditor({
+  item, onSave, onCancel, onDelete,
+}: { item: PlanItem; onSave: (t: string) => void; onCancel: () => void; onDelete: () => void }) {
+  const [t, setT] = useState(item.text);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, height: LINE }}>
+      <Bullet />
+      <input value={t} autoFocus onChange={(e) => setT(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onSave(t);
+          if (e.key === "Escape") onCancel();
+        }}
+        aria-label="Edit item"
+        style={{ ...PAPER_INPUT, caretColor: CARET, borderBottom: `1px solid ${CARET}` }} />
+      <button onClick={() => onSave(t)} style={PAPER_BTN}>Save</button>
+      <button onClick={onDelete} style={{ ...PAPER_BTN, color: "#A3392B" }}>Delete</button>
+    </div>
+  );
+}
+
+const PAPER_BTN: React.CSSProperties = {
+  border: "none", background: "transparent", padding: "0 2px", height: LINE,
+  fontSize: 12.5, fontWeight: 600, color: CARET, cursor: "pointer", flex: "none",
+};
+
+// ---------------------------------------------------------------------------
+
 /**
  * The note — a paper sticky, ruled and dog-eared, not a dark text field.
  *
@@ -747,26 +908,7 @@ function NoteCard() {
         <DayStrip date={date} onChange={(d) => { setText(null); setDate(d); }} compact />
       </div>
 
-      {/*
-        The dog-ear is CUT, not painted over. The prototype covers the corner with a
-        solid #121829 triangle, which only disappears if the thing behind is flat
-        #121829 — here the note sits on a translucent card over a gradient, so a solid
-        patch reads as a grey block. Clipping the corner shows whatever is actually
-        behind it, on any background.
-      */}
-      <div style={{
-        position: "relative", borderRadius: "3px 3px 3px 14px",
-        background: "linear-gradient(160deg,#E8D9A8 0%,#DFCE99 62%,#D6C48D 100%)",
-        boxShadow: "0 10px 22px rgba(0,0,0,.32)", overflow: "hidden",
-        clipPath: "polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%)",
-      }}>
-        {/* The fold's shadow. Its outer half falls in the cut area and is clipped away,
-            leaving exactly the triangle that reads as folded paper. */}
-        <div style={{
-          position: "absolute", right: 0, top: 0, width: 26, height: 26,
-          background: "linear-gradient(225deg, rgba(0,0,0,.22) 0 50%, transparent 50%)",
-          pointerEvents: "none",
-        }} />
+      <Paper>
         <textarea
           value={value}
           onChange={(e) => setText(e.target.value)}
@@ -777,18 +919,14 @@ function NoteCard() {
           style={{
             display: "block", width: "100%", boxSizing: "border-box", border: "none",
             outline: "none", resize: "none", overflow: "hidden",
-            backgroundColor: "transparent",
-            backgroundImage:
-              "repeating-linear-gradient(to bottom, transparent 0, transparent 25px," +
-              " rgba(0,0,0,.10) 25px, rgba(0,0,0,.10) 26px)",
+            backgroundColor: "transparent", backgroundImage: RULED,
             backgroundAttachment: "local",
             padding: "9px 30px 12px 14px",
-            fontFamily: "'Instrument Sans', system-ui, sans-serif",
-            fontSize: 14, lineHeight: "26px", color: "#2B2415", caretColor: "#7A5B22",
+            ...HAND, caretColor: CARET,
             minHeight: 112,
           }}
         />
-      </div>
+      </Paper>
       {saved.trim() && (
         <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8, ...num }}>
           {saved.trim().split(/\s+/).length} words · saved when you tap away

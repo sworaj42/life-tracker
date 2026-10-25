@@ -17,7 +17,7 @@ export type Kind =
   | "weight" | "water" | "coffee" | "food"
   | "lift" | "split" | "effort" | "dayEnd" | "workout"
   | "expense" | "income"
-  | "note" | "did" | "work" | "art"
+  | "note" | "did" | "work" | "art" | "todo"
   | "application" | "stage";
 
 /** Sleep stages, as HealthKit names them. */
@@ -84,6 +84,9 @@ export interface Payloads {
     note?: string;
   };
   art: { title: string; posted: boolean };
+  /** One item of the day's plan. `local_date` is the day it was planned for; `done_on`
+   *  is the day it was ticked, which is not the same day once it has carried over. */
+  todo: { text: string; done: boolean; done_on?: string };
 
   application: { appId: string; company: string; role: string };
   stage: { appId: string; name: string };

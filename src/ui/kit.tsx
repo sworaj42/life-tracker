@@ -322,13 +322,19 @@ export function Segmented<T extends string>({
  * changed weight with the font. One component, SVG chevrons, everywhere.
  */
 export function DayStrip({
-  date, onChange, compact,
-}: { date: string; onChange: (d: string) => void; compact?: boolean }) {
+  date, onChange, compact, max,
+}: {
+  date: string; onChange: (d: string) => void; compact?: boolean;
+  /** The last day it can step to. Today, unless the card plans ahead. */
+  max?: string;
+}) {
   const t = today();
-  const atToday = date >= t;
+  const last = max ?? t;
+  const atToday = date >= last;
   const label =
     date === t ? "Today"
       : date === shiftDays(-1, t) ? "Yesterday"
+        : date === shiftDays(1, t) ? "Tomorrow"
         : new Date(date + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
   const size = compact ? H.arrow : 32;
 
@@ -348,7 +354,7 @@ export function DayStrip({
         disabled={atToday} style={{ ...ghost(size, 9, atToday ? C.faint : C.ink), opacity: atToday ? 0.55 : 1 }}>
         <Icon name="chevronRight" size={13} strokeWidth={2} />
       </button>
-      <DateField value={date} max={t} onChange={onChange} compact style={{ width: 118 }} />
+      <DateField value={date} max={last} onChange={onChange} compact style={{ width: 118 }} />
     </div>
   );
 }
