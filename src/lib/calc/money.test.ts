@@ -20,8 +20,8 @@ const earn = (amount: number, cat: string, date: string, label = cat) =>
 // 2026-09-09 is a Wednesday; the budget week runs Sun 06 to Sat 12.
 const WED = "2026-09-09";
 
-describe("the one budget rule — Lent is not spending", () => {
-  it("excludes Lent and nothing else", () => {
+describe("the budget rule — Lent is not spending", () => {
+  it("excludes Lent", () => {
     expect(inBudget({ cat: "Lent" })).toBe(false);
     expect(inBudget({ cat: "lent" })).toBe(false);   // case-insensitive
     expect(inBudget({ cat: " Lent " })).toBe(false); // and trimmed
@@ -43,6 +43,27 @@ describe("the one budget rule — Lent is not spending", () => {
 
   it("but lending DOES move the balance — the money left the account", () => {
     expect(balance(transactions([spend(5000, "Lent", WED)]), 48200)).toBe(43200);
+  });
+});
+
+describe("a balance correction is not spending", () => {
+  it("moves the balance but stays out of every spending aggregate", () => {
+    const txns = transactions([
+      spend(900, "Food", WED),
+      spend(20000, "Other", WED, "unaccounted"),
+    ]);
+    expect(balance(txns, 48200)).toBe(48200 - 900 - 20000);
+    expect(budget(txns, 7000, WED).spent).toBe(900);
+    expect(dailySpend(txns, 1, WED)[0].amount).toBe(900);
+    expect(byCategory(txns, "2026-09-01", WED).map((c) => c.cat)).toEqual(["Food"]);
+    expect(topSpends(txns, "2026-09-01", WED)).toHaveLength(1);
+    expect(runway(27300, txns, WED).burnPerWeek).toBe(900 / 4);
+  });
+
+  it("still shows on the balance line, which is what the bank would show", () => {
+    const txns = transactions([spend(20000, "Other", WED, "unaccounted")]);
+    const s = balanceSeries(txns, 28200, 2, WED);
+    expect(s.map((p) => p.value)).toEqual([48200, 28200]);
   });
 });
 

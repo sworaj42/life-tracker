@@ -25,7 +25,7 @@ import { today, shiftDays } from "@/lib/date";
 import {
   transactions, balance, budget, runway, byCategory, topSpends, dailySpend,
   balanceSeries, search, spentOn, spentBetween,
-  DEFAULT_EXPENSE_CATS, DEFAULT_INCOME_CATS, rs, type Txn,
+  DEFAULT_EXPENSE_CATS, DEFAULT_INCOME_CATS, UNACCOUNTED, rs, type Txn,
 } from "@/lib/calc/money";
 import { C, num } from "@/ui/tokens";
 import {
@@ -172,9 +172,9 @@ function BalanceTile({
       // Nothing logged yet: this is the opening figure, not a correction.
       await saveProfile({ balance_opening: actual });
     } else if (gap > 0) {
-      await logEvent("expense", { amount: gap, cat: "Other", label: "unaccounted" });
+      await logEvent("expense", { amount: gap, cat: "Other", label: UNACCOUNTED });
     } else {
-      await logEvent("income", { amount: -gap, cat: "Other", label: "unaccounted" });
+      await logEvent("income", { amount: -gap, cat: "Other", label: UNACCOUNTED });
     }
     bump();
   };
@@ -213,7 +213,7 @@ function BalanceTile({
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             style={{ ...INPUT, fontSize: 20, fontWeight: 600, padding: "6px 10px" }} />
           <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>
-            Enter to save · the gap is logged as unaccounted
+            Enter to save · the gap is logged as unaccounted, not as spending
           </div>
         </>
       ) : (

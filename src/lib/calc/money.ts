@@ -2,7 +2,9 @@
  * Money.
  *
  * ONE budget rule, used by every aggregate (SPEC §6): money in the **Lent** category is
- * not spending. Everything else counts, food included. There is no per-transaction
+ * not spending, and neither is an `unaccounted` balance correction — a gap found after
+ * weeks of not logging is not something spent this week. Everything else counts, food
+ * included. There is no per-transaction
  * "outside budget" flag — that was removed because it could not be inspected from the UI
  * and produced figures that disagreed with each other.
  *
@@ -32,8 +34,12 @@ export interface Txn {
   receipt?: string;
 }
 
-/** The single exclusion. Lending is not spending — you expect it back. */
-export const inBudget = (t: { cat?: string }) => (t.cat ?? "").trim().toLowerCase() !== LENT;
+/**
+ * The only exclusions. Lending is not spending — you expect it back. A correction moves
+ * the balance but would otherwise land its whole gap on one day of the spend chart.
+ */
+export const inBudget = (t: { cat?: string; label?: string }) =>
+  (t.cat ?? "").trim().toLowerCase() !== LENT && t.label !== UNACCOUNTED;
 
 export function transactions(events: AnyEvent[]): Txn[] {
   return events
